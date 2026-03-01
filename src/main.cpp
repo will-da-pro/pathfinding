@@ -40,9 +40,16 @@ int main() {
     cv::cvtColor(skeletonizedImage, skeletonizedImageGraph, cv::COLOR_GRAY2BGR);
 
     std::vector<cv::Point> nodes = graphExtractor.getNodes();
+    std::map<cv::Point, std::vector<cv::Point>, ComparePoints> lines =
+        graphExtractor.getLines();
 
     for (const auto &node : nodes) {
       cv::circle(skeletonizedImageGraph, node, 3, cv::Scalar(255, 0, 0), 5);
+
+      for (const auto &connectedNode : lines[node]) {
+        cv::line(skeletonizedImageGraph, node, connectedNode,
+                 cv::Scalar(0, 255, 0), 3);
+      }
     }
 
     cv::imshow("Skeleton + Graph", skeletonizedImageGraph);

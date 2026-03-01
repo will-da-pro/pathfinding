@@ -1,6 +1,8 @@
 #include "thinning/ExtractGraph.hpp"
+#include <algorithm>
 #include <iostream>
 #include <opencv2/ximgproc.hpp>
+#include <stdexcept>
 #include <vector>
 
 GraphExtractor::GraphExtractor() {
@@ -69,7 +71,8 @@ void GraphExtractor::processImage() {
 
 std::vector<cv::Point> GraphExtractor::getNodes() { return this->nodes; }
 
-std::vector<std::pair<cv::Point, cv::Point>> GraphExtractor::getLines() {
+std::map<cv::Point, std::vector<cv::Point>, ComparePoints>
+GraphExtractor::getLines() {
   return this->lines;
 }
 
@@ -107,7 +110,71 @@ std::vector<cv::Point> GraphExtractor::getSurroundingPoints(cv::Point centre,
   cropped = image(roi).clone();
 
   cv::findNonZero(cropped, surroundingPoints);
+
+  for (auto &point : surroundingPoints) {
+    point += centre + cv::Point(-1, -1);
+  }
+
   return surroundingPoints;
 }
 
-void GraphExtractor::extractLines() {}
+void GraphExtractor::extractLines() {
+  if (this->nodes.size() == 0) {
+    return;
+  }
+
+  for (const auto &node : this->nodes) {
+    this->lines[node] = {};
+    std::vector<cv::Point> connectedNodes = this->getConnectedNodes(node);
+
+    for (const auto &connected : connectedNodes) {
+      this->lines[node].push_back(connected);
+    }
+  }
+}
+
+std::vector<cv::Point> GraphExtractor::getConnectedNodes(cv::Point node) {
+  std::vector<cv::Point> connectedNodes;
+  std::vector<cv::Point> surroundingPoints =
+      this->getSurroundingPoints(node, 3);
+
+  for (const auto &point : surroundingPoints) {
+    if (point == node)
+      continue;
+
+    cv::Point connectedNode = this->followToNode(point, node);
+    connectedNodes.push_back(connectedNode);
+  }
+
+  return connectedNodes;
+}
+
+cv::Point GraphExtractor::followToNode(cv::Point current, cv::Point previous) {
+  if (std::find(this->nodes.begin(), this->nodes.end(), current) !=
+      this->nodes.end()) {
+    return current;
+  }
+
+  std::vector<cv::Point> surroundingPoints =
+      this->getSurroundingPoints(current, 3);
+
+  auto it1 =
+      std::find(surroundingPoints.begin(), surroundingPoints.end(), current);
+
+  if (it1 != surroundingPoints.end()) {
+    surroundingPoints.erase(it1);
+  }
+
+  auto it2 =
+      std::find(surroundingPoints.begin(), surroundingPoints.end(), previous);
+
+  if (it2 != surroundingPoints.end()) {
+    surroundingPoints.erase(it2);
+  }
+
+  if (surroundingPoints.size() != 1) {
+    throw std::runtime_error("Line does not end in node!");
+  }
+
+  return this->followToNode(surroundingPoints[0], current);
+}
