@@ -43,13 +43,24 @@ int main() {
     std::map<cv::Point, std::vector<cv::Point>, ComparePoints> lines =
         graphExtractor.getLines();
 
+    std::vector<cv::Point> path;
+
+    if (nodes.size() > 0) {
+      path = graphExtractor.findPath(nodes[0]);
+    }
+
     for (const auto &node : nodes) {
       cv::circle(skeletonizedImageGraph, node, 3, cv::Scalar(255, 0, 0), 5);
 
       for (const auto &connectedNode : lines[node]) {
         cv::line(skeletonizedImageGraph, node, connectedNode,
-                 cv::Scalar(0, 255, 0), 3);
+                 cv::Scalar(0, 255, 0), 2);
       }
+    }
+
+    for (int i = 1; i < path.size(); i++) {
+      cv::line(skeletonizedImageGraph, path[i - 1], path[i],
+               cv::Scalar(0, 0, 255), 3);
     }
 
     cv::imshow("Skeleton + Graph", skeletonizedImageGraph);

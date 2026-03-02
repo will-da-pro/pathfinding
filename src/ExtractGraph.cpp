@@ -7,6 +7,7 @@
 
 GraphExtractor::GraphExtractor() {
   std::cout << "Initialising graph extractor..." << std::endl;
+  this->pathLimit = 5;
 }
 
 void GraphExtractor::loadImage(cv::Mat image) {
@@ -177,4 +178,47 @@ cv::Point GraphExtractor::followToNode(cv::Point current, cv::Point previous) {
   }
 
   return this->followToNode(surroundingPoints[0], current);
+}
+
+void GraphExtractor::findNextNode(std::vector<cv::Point> &path) {
+  cv::Point current = path[path.size() - 1];
+  cv::Point previous = path[path.size() - 2];
+  std::vector<cv::Point> connectedNodes = this->lines[current];
+
+  auto it1 = std::find(connectedNodes.begin(), connectedNodes.end(), current);
+
+  if (it1 != connectedNodes.end()) {
+    connectedNodes.erase(it1);
+  }
+
+  auto it2 = std::find(connectedNodes.begin(), connectedNodes.end(), previous);
+
+  if (it2 != connectedNodes.end()) {
+    connectedNodes.erase(it2);
+  }
+
+  if (connectedNodes.size() == 0 || path.size() > this->pathLimit) {
+    return;
+  }
+
+  else {
+    path.push_back(connectedNodes[0]);
+    this->findNextNode(path);
+  }
+}
+
+std::vector<cv::Point> GraphExtractor::findPath(cv::Point startPos) {
+  std::vector<cv::Point> path;
+
+  // TODO find nearest node instead of only using exact position
+  std::vector<cv::Point> connectedNodes = this->lines[startPos];
+
+  if (connectedNodes.size() > 0) {
+    path.push_back(startPos);
+    path.push_back(connectedNodes[0]);
+
+    this->findNextNode(path);
+  }
+
+  return path;
 }

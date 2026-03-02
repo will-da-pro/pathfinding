@@ -20,6 +20,9 @@ public:
   std::vector<cv::Point> getNodes();
   std::map<cv::Point, std::vector<cv::Point>, ComparePoints> getLines();
   cv::Mat getSkeletonizedImage();
+  std::vector<cv::Point> findPath(cv::Point startPos);
+
+  int pathLimit;
 
 private:
   void extractNodes();
@@ -27,6 +30,7 @@ private:
   std::vector<cv::Point> getSurroundingPoints(cv::Point centre, int radius);
   std::vector<cv::Point> getConnectedNodes(cv::Point node);
   cv::Point followToNode(cv::Point current, cv::Point previous);
+  void findNextNode(std::vector<cv::Point> &path);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;
