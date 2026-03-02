@@ -1,5 +1,7 @@
 #include "thinning/ExtractGraph.hpp"
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <opencv2/ximgproc.hpp>
 #include <stdexcept>
@@ -150,6 +152,14 @@ std::vector<cv::Point> GraphExtractor::getConnectedNodes(cv::Point node) {
   return connectedNodes;
 }
 
+double GraphExtractor::calculateAngle(cv::Point point1, cv::Point point2) {
+  int rise = point2.y - point1.y;
+  int run = point2.x - point1.x;
+
+  double angle = std::atan2(rise, run);
+  return angle;
+}
+
 cv::Point GraphExtractor::followToNode(cv::Point current, cv::Point previous) {
   if (std::find(this->nodes.begin(), this->nodes.end(), current) !=
       this->nodes.end()) {
@@ -201,10 +211,21 @@ void GraphExtractor::findNextNode(std::vector<cv::Point> &path) {
     return;
   }
 
-  else {
-    path.push_back(connectedNodes[0]);
-    this->findNextNode(path);
+  double previousAngle = this->calculateAngle(current, previous);
+  double targetAngle = fmod(previousAngle + M_PI, M_PI);
+  double closestAngle = this->calculateAngle(current, connectedNodes[0]);
+  cv::Point closestNode = connectedNodes[0];
+
+  for (const auto &node : connectedNodes) {
+    double angle = this->calculateAngle(current, node);
+    if (abs(angle - targetAngle) < abs(closestAngle - targetAngle)) {
+      closestAngle = angle;
+      closestNode = node;
+    }
   }
+
+  path.push_back(closestNode);
+  this->findNextNode(path);
 }
 
 std::vector<cv::Point> GraphExtractor::findPath(cv::Point startPos) {

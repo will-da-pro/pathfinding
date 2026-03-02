@@ -31,6 +31,7 @@ private:
   std::vector<cv::Point> getConnectedNodes(cv::Point node);
   cv::Point followToNode(cv::Point current, cv::Point previous);
   void findNextNode(std::vector<cv::Point> &path);
+  double calculateAngle(cv::Point point1, cv::Point point2);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;
