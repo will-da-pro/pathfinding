@@ -1,4 +1,4 @@
-#include "thinning/ExtractGraph.hpp"
+#include "pathfinding/ExtractGraph.hpp"
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc.hpp>

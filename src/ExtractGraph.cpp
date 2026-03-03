@@ -1,4 +1,4 @@
-#include "thinning/ExtractGraph.hpp"
+#include "pathfinding/ExtractGraph.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
