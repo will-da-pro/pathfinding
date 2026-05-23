@@ -44,15 +44,19 @@ public:
   std::vector<cv::Point> findPath(Node startPos);
 
   int pathLimit;
+  int minEdgeSize;
 
 private:
   void extractNodes();
   void extractEdges();
+  void removeShortEdges(std::vector<Edge> &edges);
   std::vector<cv::Point> getSurroundingPoints(cv::Point centre, int radius);
   std::vector<Edge> getConnectedEdges(Node node);
   Node followToNode(std::vector<cv::Point> &path);
   void findNextNode(std::vector<cv::Point> &path);
   double calculateAngle(cv::Point point1, cv::Point point2);
+
+  Node &nodeFromID(int id);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;

@@ -10,6 +10,7 @@
 GraphExtractor::GraphExtractor() {
   std::cout << "Initialising graph extractor..." << std::endl;
   this->pathLimit = 5;
+  this->minEdgeSize = 10;
 }
 
 void GraphExtractor::loadImage(cv::Mat image) {
@@ -159,6 +160,24 @@ void GraphExtractor::extractEdges() {
   }
 
   this->graph.edges = edges;
+}
+
+void GraphExtractor::removeShortEdges(std::vector<Edge> &edges) {
+  for (int i = 0; i < edges.size(); i++) {
+    // If the edge is long enough, do nothing.
+    if (edges[i].path.size() >= this->minEdgeSize)
+      continue;
+
+    // If either of the ends of an edge are endpoints, delete it.
+    if (this->nodeFromID(edges[i].src).is_endpoint ||
+        this->nodeFromID(edges[i].dst).is_endpoint) {
+      edges.erase(edges.begin() + i);
+      i--;
+      continue;
+    }
+
+    // Merge close intersections
+  }
 }
 
 std::vector<Edge> GraphExtractor::getConnectedEdges(Node node) {
