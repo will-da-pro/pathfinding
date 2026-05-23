@@ -1,14 +1,35 @@
-#include <map>
 #include <opencv2/core/types.hpp>
 #include <opencv2/opencv.hpp>
 #include <vector>
 
+struct Node {
+  int id;
+  cv::Point pos; // averaged position after merging
+  bool is_endpoint;
+};
+
+struct Edge {
+  int src, dst;                // node IDs
+  std::vector<cv::Point> path; // pixel chain along the skeleton
+  double length;               // Euclidean arc length
+
+  bool operator==(const Edge &other) const {
+    return (src == other.src && dst == other.dst) ||
+           (src == other.dst && dst == other.src);
+  }
+};
+
+struct Graph {
+  std::vector<Node> nodes;
+  std::vector<Edge> edges;
+};
+
 struct ComparePoints {
-  bool operator()(const cv::Point &a, const cv::Point &b) const {
-    if (a.y != b.y) {
-      return a.y < b.y;
+  bool operator()(const Node &a, const Node &b) const {
+    if (a.pos.y != b.pos.y) {
+      return a.pos.y < b.pos.y;
     }
-    return a.x < b.x;
+    return a.pos.x < b.pos.x;
   }
 };
 
@@ -17,24 +38,24 @@ public:
   GraphExtractor();
   void loadImage(cv::Mat image);
   void processImage();
-  std::vector<cv::Point> getNodes();
-  std::map<cv::Point, std::vector<cv::Point>, ComparePoints> getLines();
+  std::vector<Node> getNodes();
+  std::vector<Edge> getEdges();
   cv::Mat getSkeletonizedImage();
-  std::vector<cv::Point> findPath(cv::Point startPos);
+  std::vector<cv::Point> findPath(Node startPos);
 
   int pathLimit;
 
 private:
   void extractNodes();
-  void extractLines();
+  void extractEdges();
   std::vector<cv::Point> getSurroundingPoints(cv::Point centre, int radius);
-  std::vector<cv::Point> getConnectedNodes(cv::Point node);
-  cv::Point followToNode(cv::Point current, cv::Point previous);
+  std::vector<Edge> getConnectedEdges(Node node);
+  Node followToNode(std::vector<cv::Point> &path);
   void findNextNode(std::vector<cv::Point> &path);
   double calculateAngle(cv::Point point1, cv::Point point2);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;
-  std::vector<cv::Point> nodes;
-  std::map<cv::Point, std::vector<cv::Point>, ComparePoints> lines;
+
+  Graph graph;
 };

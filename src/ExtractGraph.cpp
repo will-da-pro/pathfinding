@@ -21,7 +21,9 @@ void GraphExtractor::loadImage(cv::Mat image) {
   cv::Mat gray, binary;
   cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
   GaussianBlur(gray, gray, cv::Size(5, 5), 1.5);
-  threshold(gray, binary, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+
+  cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+                        cv::THRESH_BINARY_INV, 11, 2);
 
   cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
@@ -69,20 +71,17 @@ void GraphExtractor::processImage() {
     return;
   }
   this->extractNodes();
-  this->extractLines();
+  this->extractEdges();
 }
 
-std::vector<cv::Point> GraphExtractor::getNodes() { return this->nodes; }
+std::vector<Node> GraphExtractor::getNodes() { return this->graph.nodes; }
 
-std::map<cv::Point, std::vector<cv::Point>, ComparePoints>
-GraphExtractor::getLines() {
-  return this->lines;
-}
+std::vector<Edge> GraphExtractor::getEdges() { return this->graph.edges; }
 
 void GraphExtractor::extractNodes() {
   cv::Mat image = this->skeletonizedImage;
   std::vector<cv::Point> whitePixels;
-  std::vector<cv::Point> foundNodes;
+  std::vector<Node> foundNodes;
 
   cv::findNonZero(image, whitePixels);
 
@@ -90,12 +89,23 @@ void GraphExtractor::extractNodes() {
     std::vector<cv::Point> surroundingPoints =
         this->getSurroundingPoints(point, 3);
 
-    if (surroundingPoints.size() != 3) {
-      foundNodes.push_back(point);
+    if (surroundingPoints.size() == 3)
+      continue;
+
+    Node node;
+    node.pos = point;
+    node.id = foundNodes.size();
+
+    if (surroundingPoints.size() > 3) {
+      node.is_endpoint = false;
+    } else {
+      node.is_endpoint = true;
     }
+
+    foundNodes.push_back(node);
   }
 
-  this->nodes = foundNodes;
+  this->graph.nodes = foundNodes;
 }
 
 std::vector<cv::Point> GraphExtractor::getSurroundingPoints(cv::Point centre,
@@ -121,35 +131,58 @@ std::vector<cv::Point> GraphExtractor::getSurroundingPoints(cv::Point centre,
   return surroundingPoints;
 }
 
-void GraphExtractor::extractLines() {
-  if (this->nodes.size() == 0) {
+void GraphExtractor::extractEdges() {
+  if (this->graph.nodes.size() == 0) {
     return;
   }
 
-  for (const auto &node : this->nodes) {
-    this->lines[node] = {};
-    std::vector<cv::Point> connectedNodes = this->getConnectedNodes(node);
+  std::vector<Edge> edges;
 
-    for (const auto &connected : connectedNodes) {
-      this->lines[node].push_back(connected);
+  for (const auto &node : this->graph.nodes) {
+    // unoptimised—Should check if node path exists on edge before tracing
+    std::vector<Edge> connectedEdges = this->getConnectedEdges(node);
+
+    for (const auto &edge : connectedEdges) {
+      bool exists = false;
+
+      for (const auto &existingEdge : edges) {
+        if (edge == existingEdge) {
+          exists = true;
+          break;
+        }
+      }
+
+      if (!exists) {
+        edges.push_back(edge);
+      }
     }
   }
+
+  this->graph.edges = edges;
 }
 
-std::vector<cv::Point> GraphExtractor::getConnectedNodes(cv::Point node) {
-  std::vector<cv::Point> connectedNodes;
+std::vector<Edge> GraphExtractor::getConnectedEdges(Node node) {
+  std::vector<Edge> connectedEdges;
   std::vector<cv::Point> surroundingPoints =
-      this->getSurroundingPoints(node, 3);
+      this->getSurroundingPoints(node.pos, 3);
 
   for (const auto &point : surroundingPoints) {
-    if (point == node)
+    if (point == node.pos)
       continue;
 
-    cv::Point connectedNode = this->followToNode(point, node);
-    connectedNodes.push_back(connectedNode);
+    Edge edge;
+    edge.src = node.id;
+
+    edge.path.push_back(node.pos);
+    edge.path.push_back(point);
+
+    edge.dst = this->followToNode(edge.path).id;
+    edge.length = edge.path.size();
+
+    connectedEdges.push_back(edge);
   }
 
-  return connectedNodes;
+  return connectedEdges;
 }
 
 double GraphExtractor::calculateAngle(cv::Point point1, cv::Point point2) {
@@ -160,10 +193,20 @@ double GraphExtractor::calculateAngle(cv::Point point1, cv::Point point2) {
   return angle;
 }
 
-cv::Point GraphExtractor::followToNode(cv::Point current, cv::Point previous) {
-  if (std::find(this->nodes.begin(), this->nodes.end(), current) !=
-      this->nodes.end()) {
-    return current;
+Node GraphExtractor::followToNode(std::vector<cv::Point> &path) {
+  cv::Point current = path[path.size() - 1];
+  cv::Point previous;
+
+  if (path.size() > 1) {
+    previous = path[path.size() - 2];
+  }
+
+  auto it =
+      std::find_if(this->graph.nodes.begin(), this->graph.nodes.end(),
+                   [current](const Node &node) { return node.pos == current; });
+
+  if (it != this->graph.nodes.end()) {
+    return *it;
   }
 
   std::vector<cv::Point> surroundingPoints =
@@ -187,59 +230,63 @@ cv::Point GraphExtractor::followToNode(cv::Point current, cv::Point previous) {
     throw std::runtime_error("Line does not end in node!");
   }
 
-  return this->followToNode(surroundingPoints[0], current);
+  path.push_back(surroundingPoints[0]);
+
+  return this->followToNode(path);
 }
 
 void GraphExtractor::findNextNode(std::vector<cv::Point> &path) {
-  cv::Point current = path[path.size() - 1];
-  cv::Point previous = path[path.size() - 2];
-  std::vector<cv::Point> connectedNodes = this->lines[current];
-
-  auto it1 = std::find(connectedNodes.begin(), connectedNodes.end(), current);
-
-  if (it1 != connectedNodes.end()) {
-    connectedNodes.erase(it1);
-  }
-
-  auto it2 = std::find(connectedNodes.begin(), connectedNodes.end(), previous);
-
-  if (it2 != connectedNodes.end()) {
-    connectedNodes.erase(it2);
-  }
-
-  if (connectedNodes.size() == 0 || path.size() > this->pathLimit) {
-    return;
-  }
-
-  double previousAngle = this->calculateAngle(current, previous);
-  double targetAngle = fmod(previousAngle + M_PI, M_PI);
-  double closestAngle = this->calculateAngle(current, connectedNodes[0]);
-  cv::Point closestNode = connectedNodes[0];
-
-  for (const auto &node : connectedNodes) {
-    double angle = this->calculateAngle(current, node);
-    if (abs(angle - targetAngle) < abs(closestAngle - targetAngle)) {
-      closestAngle = angle;
-      closestNode = node;
-    }
-  }
-
-  path.push_back(closestNode);
-  this->findNextNode(path);
+  // cv::Point current = path[path.size() - 1];
+  // cv::Point previous = path[path.size() - 2];
+  // std::vector<cv::Point> connectedNodes = this->lines[current];
+  //
+  // auto it1 = std::find(connectedNodes.begin(), connectedNodes.end(),
+  // current);
+  //
+  // if (it1 != connectedNodes.end()) {
+  //   connectedNodes.erase(it1);
+  // }
+  //
+  // auto it2 = std::find(connectedNodes.begin(), connectedNodes.end(),
+  // previous);
+  //
+  // if (it2 != connectedNodes.end()) {
+  //   connectedNodes.erase(it2);
+  // }
+  //
+  // if (connectedNodes.size() == 0 || path.size() > this->pathLimit) {
+  //   return;
+  // }
+  //
+  // double previousAngle = this->calculateAngle(current, previous);
+  // double targetAngle = fmod(previousAngle + M_PI, M_PI);
+  // double closestAngle = this->calculateAngle(current, connectedNodes[0]);
+  // cv::Point closestNode = connectedNodes[0];
+  //
+  // for (const auto &node : connectedNodes) {
+  //   double angle = this->calculateAngle(current, node);
+  //   if (abs(angle - targetAngle) < abs(closestAngle - targetAngle)) {
+  //     closestAngle = angle;
+  //     closestNode = node;
+  //   }
+  // }
+  //
+  // path.push_back(closestNode);
+  // this->findNextNode(path);
 }
 
-std::vector<cv::Point> GraphExtractor::findPath(cv::Point startPos) {
+std::vector<cv::Point> GraphExtractor::findPath(Node startPos) {
   std::vector<cv::Point> path;
 
   // TODO find nearest node instead of only using exact position
-  std::vector<cv::Point> connectedNodes = this->lines[startPos];
-
-  if (connectedNodes.size() > 0) {
-    path.push_back(startPos);
-    path.push_back(connectedNodes[0]);
-
-    this->findNextNode(path);
-  }
+  // std::vector<cv::Point> connectedNodes = this->lines[startPos];
+  //
+  // if (connectedNodes.size() > 0) {
+  //   path.push_back(startPos);
+  //   path.push_back(connectedNodes[0]);
+  //
+  //   this->findNextNode(path);
+  // }
 
   return path;
 }

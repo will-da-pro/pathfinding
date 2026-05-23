@@ -30,4 +30,4 @@ target_include_directories(main PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # 4. Link against the absolute paths defined above
-target_link_libraries(main PRIVATE ${OPENCV_LIBS})
+target_link_libraries(main PRIVATE ${OPENCV_LIBS} ${OpenCV_LIBRARIES})

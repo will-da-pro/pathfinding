@@ -1,8 +1,9 @@
 #include "pathfinding/ExtractGraph.hpp"
+#include <chrono>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc.hpp>
-#include <vector>
+// #include <vector>
 
 int main() {
   cv::VideoCapture cap(1);
@@ -36,25 +37,37 @@ int main() {
     graphExtractor.processImage();
 
     cv::Mat skeletonizedImage = graphExtractor.getSkeletonizedImage();
+    auto start = std::chrono::steady_clock::now();
+    // Graph graph = buildGraph(skeletonizedImage, 10);
+
+    // cv::Mat skeletonizedImageGraph = visualise(skeletonizedImage, graph);
+
     cv::Mat skeletonizedImageGraph;
     cv::cvtColor(skeletonizedImage, skeletonizedImageGraph, cv::COLOR_GRAY2BGR);
 
-    std::vector<cv::Point> nodes = graphExtractor.getNodes();
-    std::map<cv::Point, std::vector<cv::Point>, ComparePoints> lines =
-        graphExtractor.getLines();
+    std::vector<Node> nodes = graphExtractor.getNodes();
+    std::vector<Edge> lines = graphExtractor.getEdges();
 
     std::vector<cv::Point> path;
+
+    auto end = std::chrono::steady_clock::now();
+    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end -
+                                                                       start)
+                     .count()
+              << std::endl;
 
     if (nodes.size() > 0) {
       path = graphExtractor.findPath(nodes[0]);
     }
 
     for (const auto &node : nodes) {
-      cv::circle(skeletonizedImageGraph, node, 3, cv::Scalar(255, 0, 0), 5);
+      cv::circle(skeletonizedImageGraph, node.pos, 3, cv::Scalar(255, 0, 0), 5);
+    }
 
-      for (const auto &connectedNode : lines[node]) {
-        cv::line(skeletonizedImageGraph, node, connectedNode,
-                 cv::Scalar(0, 255, 0), 2);
+    for (const auto &edge : lines) {
+      for (const auto pos : edge.path) {
+        skeletonizedImageGraph.at<cv::Vec3b>(pos.y, pos.x) =
+            cv::Vec3b(255, 0, 0);
       }
     }
 
