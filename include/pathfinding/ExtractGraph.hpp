@@ -36,10 +36,13 @@ struct ComparePoints {
 class GraphExtractor {
 public:
   GraphExtractor();
+
   void loadImage(cv::Mat image);
   void processImage();
+
   std::vector<Node> getNodes();
   std::vector<Edge> getEdges();
+
   cv::Mat getSkeletonizedImage();
   std::vector<cv::Point> findPath(Node startPos);
 
@@ -49,14 +52,19 @@ public:
 private:
   void extractNodes();
   void extractEdges();
-  void removeShortEdges(std::vector<Edge> &edges);
+
   std::vector<cv::Point> getSurroundingPoints(cv::Point centre, int radius);
-  std::vector<Edge> getConnectedEdges(Node node);
+  std::vector<Edge> traceConnectedEdges(Node node);
   Node followToNode(std::vector<cv::Point> &path);
-  void findNextNode(std::vector<cv::Point> &path);
+
+  void removeShortEdges(std::vector<Edge> &edges);
+  Edge mergeEdges(Edge edge1, Edge edge2);
+
+  void findNextNode(std::vector<Node> &path);
   double calculateAngle(cv::Point point1, cv::Point point2);
 
-  Node &nodeFromID(int id);
+  Node *nodeFromID(int id);
+  std::vector<Edge *> getConnectedEdges(int nodeID);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;

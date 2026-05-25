@@ -10,7 +10,7 @@
 GraphExtractor::GraphExtractor() {
   std::cout << "Initialising graph extractor..." << std::endl;
   this->pathLimit = 5;
-  this->minEdgeSize = 10;
+  this->minEdgeSize = 15;
 }
 
 void GraphExtractor::loadImage(cv::Mat image) {
@@ -60,6 +60,15 @@ void GraphExtractor::loadImage(cv::Mat image) {
   this->skeletonizedImage = skeleton;
 }
 
+Node *GraphExtractor::nodeFromID(int id) {
+  for (Node &node : this->graph.nodes) {
+    if (node.id == id)
+      return &node;
+  }
+
+  return nullptr;
+}
+
 cv::Mat GraphExtractor::getSkeletonizedImage() {
   return this->skeletonizedImage;
 }
@@ -73,6 +82,7 @@ void GraphExtractor::processImage() {
   }
   this->extractNodes();
   this->extractEdges();
+  this->removeShortEdges(this->graph.edges);
 }
 
 std::vector<Node> GraphExtractor::getNodes() { return this->graph.nodes; }
@@ -141,7 +151,7 @@ void GraphExtractor::extractEdges() {
 
   for (const auto &node : this->graph.nodes) {
     // unoptimised—Should check if node path exists on edge before tracing
-    std::vector<Edge> connectedEdges = this->getConnectedEdges(node);
+    std::vector<Edge> connectedEdges = this->traceConnectedEdges(node);
 
     for (const auto &edge : connectedEdges) {
       bool exists = false;
@@ -162,25 +172,86 @@ void GraphExtractor::extractEdges() {
   this->graph.edges = edges;
 }
 
+std::vector<Edge *> GraphExtractor::getConnectedEdges(int nodeID) {
+  std::vector<Edge *> result;
+
+  for (Edge &edge : this->graph.edges) {
+    if (edge.src == nodeID || edge.dst == nodeID)
+      result.push_back(&edge);
+  }
+
+  return result;
+}
+
 void GraphExtractor::removeShortEdges(std::vector<Edge> &edges) {
   for (int i = 0; i < edges.size(); i++) {
     // If the edge is long enough, do nothing.
     if (edges[i].path.size() >= this->minEdgeSize)
       continue;
 
+    Node *src = this->nodeFromID(edges[i].src);
+    Node *dst = this->nodeFromID(edges[i].dst);
+
+    if (!src || !dst) {
+      std::cerr << "Node does not exist!\n";
+      continue;
+    }
+
     // If either of the ends of an edge are endpoints, delete it.
-    if (this->nodeFromID(edges[i].src).is_endpoint ||
-        this->nodeFromID(edges[i].dst).is_endpoint) {
+    if (src->is_endpoint || dst->is_endpoint) {
       edges.erase(edges.begin() + i);
       i--;
       continue;
     }
 
     // Merge close intersections
+    for (Edge *connectedEdge : this->getConnectedEdges(edges[i].src)) {
+      if (!connectedEdge) {
+        std::cerr << "Edge does not exist!\n";
+        continue;
+      }
+
+      *connectedEdge = this->mergeEdges(*connectedEdge, edges[i]);
+    }
+
+    edges.erase(edges.begin() + i);
+    i--;
   }
 }
 
-std::vector<Edge> GraphExtractor::getConnectedEdges(Node node) {
+Edge GraphExtractor::mergeEdges(Edge edge1, Edge edge2) {
+  if (edge1.dst == edge2.src) {
+    edge1.path.insert(edge1.path.end(), edge2.path.begin() + 1,
+                      edge2.path.end());
+    edge1.dst = edge2.dst;
+  }
+
+  else if (edge1.src == edge2.dst) {
+    edge1.path.insert(edge1.path.begin(), edge2.path.begin() + 1,
+                      edge2.path.end());
+    edge1.src = edge2.src;
+  }
+
+  else if (edge1.dst == edge2.dst) {
+    std::reverse(edge2.path.begin(), edge2.path.end());
+
+    edge1.path.insert(edge1.path.end(), edge2.path.begin() + 1,
+                      edge2.path.end());
+    edge1.dst = edge2.src;
+  }
+
+  else if (edge1.src == edge2.src) {
+    std::reverse(edge2.path.begin(), edge2.path.end());
+    edge1.path.insert(edge1.path.begin(), edge2.path.begin() + 1,
+                      edge2.path.end());
+    edge1.src = edge2.dst;
+  }
+
+  edge1.length = edge1.path.size();
+  return edge1;
+}
+
+std::vector<Edge> GraphExtractor::traceConnectedEdges(Node node) {
   std::vector<Edge> connectedEdges;
   std::vector<cv::Point> surroundingPoints =
       this->getSurroundingPoints(node.pos, 3);
@@ -254,7 +325,7 @@ Node GraphExtractor::followToNode(std::vector<cv::Point> &path) {
   return this->followToNode(path);
 }
 
-void GraphExtractor::findNextNode(std::vector<cv::Point> &path) {
+void GraphExtractor::findNextNode(std::vector<Node> &path) {
   // cv::Point current = path[path.size() - 1];
   // cv::Point previous = path[path.size() - 2];
   // std::vector<cv::Point> connectedNodes = this->lines[current];
