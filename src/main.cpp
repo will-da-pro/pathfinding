@@ -48,7 +48,7 @@ int main() {
     std::vector<Node> nodes = graphExtractor.getNodes();
     std::vector<Edge> lines = graphExtractor.getEdges();
 
-    std::vector<cv::Point> path;
+    std::vector<Node> path;
 
     auto end = std::chrono::steady_clock::now();
     std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end -
@@ -72,7 +72,7 @@ int main() {
     }
 
     for (int i = 1; i < path.size(); i++) {
-      cv::line(skeletonizedImageGraph, path[i - 1], path[i],
+      cv::line(skeletonizedImageGraph, path[i - 1].pos, path[i].pos,
                cv::Scalar(0, 0, 255), 3);
     }
 

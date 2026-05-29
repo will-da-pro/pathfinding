@@ -326,57 +326,99 @@ Node GraphExtractor::followToNode(std::vector<cv::Point> &path) {
 }
 
 void GraphExtractor::findNextNode(std::vector<Node> &path) {
-  // cv::Point current = path[path.size() - 1];
-  // cv::Point previous = path[path.size() - 2];
-  // std::vector<cv::Point> connectedNodes = this->lines[current];
-  //
-  // auto it1 = std::find(connectedNodes.begin(), connectedNodes.end(),
-  // current);
-  //
-  // if (it1 != connectedNodes.end()) {
-  //   connectedNodes.erase(it1);
-  // }
-  //
-  // auto it2 = std::find(connectedNodes.begin(), connectedNodes.end(),
-  // previous);
-  //
-  // if (it2 != connectedNodes.end()) {
-  //   connectedNodes.erase(it2);
-  // }
-  //
-  // if (connectedNodes.size() == 0 || path.size() > this->pathLimit) {
-  //   return;
-  // }
-  //
-  // double previousAngle = this->calculateAngle(current, previous);
-  // double targetAngle = fmod(previousAngle + M_PI, M_PI);
-  // double closestAngle = this->calculateAngle(current, connectedNodes[0]);
-  // cv::Point closestNode = connectedNodes[0];
-  //
-  // for (const auto &node : connectedNodes) {
-  //   double angle = this->calculateAngle(current, node);
-  //   if (abs(angle - targetAngle) < abs(closestAngle - targetAngle)) {
-  //     closestAngle = angle;
-  //     closestNode = node;
-  //   }
-  // }
-  //
-  // path.push_back(closestNode);
-  // this->findNextNode(path);
+  Node current = path[path.size() - 1];
+  Node previous = path[path.size() - 2];
+
+  std::vector<Edge *> connected = this->getConnectedEdges(current.id);
+  std::vector<int> connectedNodes;
+
+  for (const Edge *edge : connected) {
+    if (edge->dst == current.id)
+      connectedNodes.push_back(edge->src);
+    else
+      connectedNodes.push_back(edge->dst);
+  }
+
+  if (connected.size() == 0 || path.size() > this->pathLimit) {
+    return;
+  }
+
+  std::vector<double> connectedDirs =
+      this->getEdgeDirections(current, connected);
+
+  double previousAngle = 0;
+
+  for (int i = 0; i < connected.size(); i++) {
+    if (connected[i]->src == previous.id || connected[i]->dst == previous.id) {
+      previousAngle = connectedDirs[i];
+    }
+  }
+
+  double targetAngle = fmod(previousAngle + M_PI, M_PI);
+  double closestAngle = connectedDirs[0];
+  int closestNode = connectedNodes[0];
+
+  for (int i = 0; i < connected.size(); i++) {
+    double angle = connectedDirs[i];
+    if (abs(angle - targetAngle) < abs(closestAngle - targetAngle)) {
+      closestAngle = angle;
+      closestNode = connectedNodes[i];
+    }
+  }
+
+  Node next = *this->nodeFromID(closestNode);
+  path.push_back(next);
+  this->findNextNode(path);
 }
 
-std::vector<cv::Point> GraphExtractor::findPath(Node startPos) {
-  std::vector<cv::Point> path;
+std::vector<double>
+GraphExtractor::getEdgeDirections(Node origin, std::vector<Edge *> edges) {
+  std::vector<double> results;
+
+  for (const Edge *edge : edges) {
+    cv::Point p;
+
+    if (edge->src == origin.id) {
+      p = edge->path[this->minEdgeSize - 1];
+    }
+
+    else {
+      p = edge->path[edge->path.size() - this->minEdgeSize];
+    }
+
+    double dy = p.y - origin.pos.y;
+    double dx = p.x - origin.pos.x;
+
+    double angle = std::atan2(dy, dx);
+
+    results.push_back(angle);
+  }
+
+  return results;
+}
+
+std::vector<Node> GraphExtractor::findPath(Node startPos) {
+  std::vector<Node> path;
 
   // TODO find nearest node instead of only using exact position
-  // std::vector<cv::Point> connectedNodes = this->lines[startPos];
-  //
-  // if (connectedNodes.size() > 0) {
-  //   path.push_back(startPos);
-  //   path.push_back(connectedNodes[0]);
-  //
-  //   this->findNextNode(path);
-  // }
+  std::vector<Edge *> connectedEdges = this->getConnectedEdges(startPos.id);
+
+  if (connectedEdges.size() > 0) {
+    Node next;
+
+    if (connectedEdges[0]->src == startPos.id) {
+      next = *this->nodeFromID(connectedEdges[0]->src);
+    }
+
+    else {
+      next = *this->nodeFromID(connectedEdges[0]->dst);
+    }
+
+    path.push_back(startPos);
+    path.push_back(next);
+
+    this->findNextNode(path);
+  }
 
   return path;
 }

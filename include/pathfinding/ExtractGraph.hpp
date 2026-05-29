@@ -44,7 +44,7 @@ public:
   std::vector<Edge> getEdges();
 
   cv::Mat getSkeletonizedImage();
-  std::vector<cv::Point> findPath(Node startPos);
+  std::vector<Node> findPath(Node startPos);
 
   int pathLimit;
   int minEdgeSize;
@@ -65,6 +65,7 @@ private:
 
   Node *nodeFromID(int id);
   std::vector<Edge *> getConnectedEdges(int nodeID);
+  std::vector<double> getEdgeDirections(Node origin, std::vector<Edge *> edges);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;
