@@ -50,6 +50,7 @@ public:
   std::vector<TrackedEdge> edges;
 
   int nextID = 0;
+  int edgePenalty = 0; // TODO Change later once edge detection exists
 
   TrackedNode *nodeFromID(int id);
   std::vector<TrackedEdge *> getConnectedEdges(int nodeID);

@@ -47,8 +47,9 @@ std::vector<std::vector<double>> TrackedGraph::getCostMatrix(Graph &graph) {
       int connectedEdgeDiff = graph.getConnectedEdges(newNode.id).size() -
                               this->getConnectedEdges(trackedNode.id).size();
 
-      double penalty =
-          trackedNode.screen_edge ? 0 : 0.0 * std::abs(connectedEdgeDiff);
+      double penalty = trackedNode.screen_edge
+                           ? 0
+                           : this->edgePenalty * std::abs(connectedEdgeDiff);
 
       double cost = distance + penalty;
       costs[i][j] = penalty;
@@ -577,6 +578,10 @@ void GraphExtractor::updateGraph() {
       this->trackedGraph.nodes[i].missedFrames = 0;
       this->trackedGraph.nodes[i].age++;
       this->trackedGraph.nodes[i].pos = this->graph.nodes[assigned].pos;
+      this->trackedGraph.nodes[i].is_endpoint =
+          this->graph.nodes[assigned].is_endpoint;
+      this->trackedGraph.nodes[i].screen_edge =
+          this->graph.nodes[assigned].screen_edge;
       matched[assigned] = true;
     }
 
