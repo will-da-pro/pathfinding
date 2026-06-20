@@ -1,4 +1,5 @@
 #include "pathfinding/ExtractGraph.hpp"
+#include "Hungarian.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -7,13 +8,64 @@
 #include <stdexcept>
 #include <vector>
 
+TrackedNode::TrackedNode(cv::Point pos) {
+  float dt = 1.0f;
+  kf.transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, dt, 0, 0, 1, 0, dt, 0,
+                         0, 1, 0, 0, 0, 0, 1);
+
+  kf.measurementMatrix = (cv::Mat_<float>(2, 4) << 1, 0, 0, 0, 0, 1, 0, 0);
+
+  cv::setIdentity(kf.processNoiseCov, cv::Scalar::all(1e-4));
+
+  cv::setIdentity(kf.measurementNoiseCov, cv::Scalar::all(1e-2));
+
+  cv::setIdentity(kf.errorCovPost, cv::Scalar::all(1));
+
+  kf.statePost.at<float>(1) = pos.x; // Initial X
+  kf.statePost.at<float>(1) = pos.y; // Initial Y
+  kf.statePost.at<float>(2) = 0.0f;  // Initial velocity X
+  kf.statePost.at<float>(3) = 0.0f;  // Initial velocity Y
+
+  this->pos = pos;
+}
+
+std::vector<std::vector<double>> TrackedGraph::getCostMatrix(Graph &graph) {
+  // TODO apply kalman filter
+
+  // The vector must be square
+  int size = this->nodes.size() > graph.nodes.size() ? this->nodes.size()
+                                                     : graph.nodes.size();
+
+  std::vector<std::vector<double>> costs(size, std::vector(size, 0.0));
+
+  for (int i = 0; i < this->nodes.size(); i++) {
+    for (int j = 0; j < graph.nodes.size(); j++) {
+      Node &newNode = graph.nodes[j];
+      Node &trackedNode = this->nodes[i];
+
+      double distance = cv::norm(trackedNode.pos - newNode.pos);
+      int connectedEdgeDiff = graph.getConnectedEdges(newNode.id).size() -
+                              this->getConnectedEdges(trackedNode.id).size();
+
+      double penalty =
+          trackedNode.screen_edge ? 0 : 0.0 * std::abs(connectedEdgeDiff);
+
+      double cost = distance + penalty;
+      costs[i][j] = penalty;
+    }
+  }
+
+  return costs;
+}
+
 GraphExtractor::GraphExtractor() {
   std::cout << "Initialising graph extractor..." << std::endl;
   this->pathLimit = 5;
   this->minEdgeSize = 15;
+  this->gatingThreshold = 10;
 }
 
-void GraphExtractor::loadImage(cv::Mat image) {
+void GraphExtractor::loadImage(cv::Mat &image) {
   cv::Mat resized;
   cv::Size dsize(200, 100);
 
@@ -23,8 +75,10 @@ void GraphExtractor::loadImage(cv::Mat image) {
   cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
   GaussianBlur(gray, gray, cv::Size(5, 5), 1.5);
 
-  cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-                        cv::THRESH_BINARY_INV, 11, 2);
+  // cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+  //                       cv::THRESH_BINARY_INV, 11, 2);
+
+  cv::threshold(gray, binary, 60, 255, cv::THRESH_BINARY_INV);
 
   cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
@@ -60,8 +114,66 @@ void GraphExtractor::loadImage(cv::Mat image) {
   this->skeletonizedImage = skeleton;
 }
 
-Node *GraphExtractor::nodeFromID(int id) {
-  for (Node &node : this->graph.nodes) {
+std::vector<cv::Point> GraphExtractor::extractGreen(cv::Mat &image) {
+  cv::Mat hsv;
+  cv::cvtColor(image, hsv, cv::COLOR_BGR2HSV);
+
+  cv::Scalar lower_green(35, 40, 40);
+  cv::Scalar upper_green(85, 255, 255);
+
+  cv::Mat mask;
+  cv::inRange(hsv, lower_green, upper_green, mask);
+
+  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
+  cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
+
+  std::vector<std::vector<cv::Point>> contours;
+  std::vector<cv::Vec4i> hierarchy;
+  cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL,
+                   cv::CHAIN_APPROX_SIMPLE);
+
+  std::vector<cv::Point> centers;
+
+  for (const auto &contour : contours) {
+    double area = cv::contourArea(contour);
+
+    if (area <= 100)
+      continue;
+
+    cv::Moments m = cv::moments(contour);
+
+    if (m.m00 == 0)
+      continue;
+
+    int cX = static_cast<int>(m.m10 / m.m00);
+    int cY = static_cast<int>(m.m01 / m.m00);
+
+    centers.push_back(cv::Point(cX, cY));
+  }
+
+  return centers;
+}
+
+cv::Point GraphExtractor::cvtPoint(cv::Mat &src, cv::Mat &dst,
+                                   cv::Point point) {
+  double sx = static_cast<double>(dst.cols) / static_cast<double>(src.cols);
+  double sy = static_cast<double>(dst.rows) / static_cast<double>(src.rows);
+
+  return cv::Point(cv::saturate_cast<int>(point.x * sx),
+                   cv::saturate_cast<int>(point.y * sy));
+}
+
+Node *Graph::nodeFromID(int id) {
+  for (Node &node : this->nodes) {
+    if (node.id == id)
+      return &node;
+  }
+
+  return nullptr;
+}
+
+TrackedNode *TrackedGraph::nodeFromID(int id) {
+  for (TrackedNode &node : this->nodes) {
     if (node.id == id)
       return &node;
   }
@@ -83,11 +195,21 @@ void GraphExtractor::processImage() {
   this->extractNodes();
   this->extractEdges();
   this->removeShortEdges(this->graph.edges);
+  this->removeUnconnectedNodes();
+  this->updateGraph();
 }
 
 std::vector<Node> GraphExtractor::getNodes() { return this->graph.nodes; }
 
 std::vector<Edge> GraphExtractor::getEdges() { return this->graph.edges; }
+
+std::vector<TrackedNode> GraphExtractor::getTrackedNodes() {
+  return this->trackedGraph.nodes;
+}
+
+std::vector<TrackedEdge> GraphExtractor::getTrackedEdges() {
+  return this->trackedGraph.edges;
+}
 
 void GraphExtractor::extractNodes() {
   cv::Mat image = this->skeletonizedImage;
@@ -105,12 +227,19 @@ void GraphExtractor::extractNodes() {
 
     Node node;
     node.pos = point;
-    node.id = foundNodes.size();
+    node.id = this->graph.nextID++;
 
     if (surroundingPoints.size() > 3) {
       node.is_endpoint = false;
     } else {
       node.is_endpoint = true;
+    }
+
+    if (node.pos.x <= 1 || node.pos.y <= 1 || node.pos.x >= image.cols - 2 ||
+        node.pos.y >= image.rows - 2) {
+      node.screen_edge = true;
+    } else {
+      node.screen_edge = false;
     }
 
     foundNodes.push_back(node);
@@ -172,10 +301,21 @@ void GraphExtractor::extractEdges() {
   this->graph.edges = edges;
 }
 
-std::vector<Edge *> GraphExtractor::getConnectedEdges(int nodeID) {
+std::vector<Edge *> Graph::getConnectedEdges(int nodeID) {
   std::vector<Edge *> result;
 
-  for (Edge &edge : this->graph.edges) {
+  for (Edge &edge : this->edges) {
+    if (edge.src == nodeID || edge.dst == nodeID)
+      result.push_back(&edge);
+  }
+
+  return result;
+}
+
+std::vector<TrackedEdge *> TrackedGraph::getConnectedEdges(int nodeID) {
+  std::vector<TrackedEdge *> result;
+
+  for (TrackedEdge &edge : this->edges) {
     if (edge.src == nodeID || edge.dst == nodeID)
       result.push_back(&edge);
   }
@@ -189,8 +329,8 @@ void GraphExtractor::removeShortEdges(std::vector<Edge> &edges) {
     if (edges[i].path.size() >= this->minEdgeSize)
       continue;
 
-    Node *src = this->nodeFromID(edges[i].src);
-    Node *dst = this->nodeFromID(edges[i].dst);
+    Node *src = this->graph.nodeFromID(edges[i].src);
+    Node *dst = this->graph.nodeFromID(edges[i].dst);
 
     if (!src || !dst) {
       std::cerr << "Node does not exist!\n";
@@ -205,7 +345,7 @@ void GraphExtractor::removeShortEdges(std::vector<Edge> &edges) {
     }
 
     // Merge close intersections
-    for (Edge *connectedEdge : this->getConnectedEdges(edges[i].src)) {
+    for (Edge *connectedEdge : this->graph.getConnectedEdges(edges[i].src)) {
       if (!connectedEdge) {
         std::cerr << "Edge does not exist!\n";
         continue;
@@ -249,6 +389,25 @@ Edge GraphExtractor::mergeEdges(Edge edge1, Edge edge2) {
 
   edge1.length = edge1.path.size();
   return edge1;
+}
+
+void GraphExtractor::removeUnconnectedNodes() {
+  for (int i = 0; i < this->graph.nodes.size(); i++) {
+    Node node = this->graph.nodes[i];
+
+    bool connected = false;
+    for (int j = 0; j < this->graph.edges.size() && !connected; j++) {
+      Edge edge = this->graph.edges[j];
+
+      if (edge.src == node.id || edge.dst == node.id)
+        connected = true;
+    }
+
+    if (!connected) {
+      this->graph.nodes.erase(this->graph.nodes.begin() + i);
+      i--;
+    }
+  }
 }
 
 std::vector<Edge> GraphExtractor::traceConnectedEdges(Node node) {
@@ -329,7 +488,7 @@ void GraphExtractor::findNextNode(std::vector<Node> &path) {
   Node current = path[path.size() - 1];
   Node previous = path[path.size() - 2];
 
-  std::vector<Edge *> connected = this->getConnectedEdges(current.id);
+  std::vector<Edge *> connected = this->graph.getConnectedEdges(current.id);
   std::vector<int> connectedNodes;
 
   for (const Edge *edge : connected) {
@@ -354,7 +513,7 @@ void GraphExtractor::findNextNode(std::vector<Node> &path) {
     }
   }
 
-  double targetAngle = fmod(previousAngle + M_PI, M_PI);
+  double targetAngle = fmod(previousAngle + M_PI, 2 * M_PI);
   double closestAngle = connectedDirs[0];
   int closestNode = connectedNodes[0];
 
@@ -366,9 +525,85 @@ void GraphExtractor::findNextNode(std::vector<Node> &path) {
     }
   }
 
-  Node next = *this->nodeFromID(closestNode);
+  Node next = *this->graph.nodeFromID(closestNode);
   path.push_back(next);
   this->findNextNode(path);
+}
+
+void GraphExtractor::updateGraph() {
+  for (TrackedNode &node : this->trackedGraph.nodes) {
+    cv::Mat prediction = node.kf.predict();
+
+    int x = prediction.at<float>(0);
+    int y = prediction.at<float>(1);
+
+    // node.pos = cv::Point(x, y);
+  }
+
+  if (this->trackedGraph.nodes.size() == 0) {
+    graph.nextID = 0;
+
+    for (const Node &node : this->graph.nodes) {
+      TrackedNode newNode(node.pos);
+
+      newNode.id = graph.nextID++;
+      newNode.is_endpoint = node.is_endpoint;
+      newNode.screen_edge = node.screen_edge;
+
+      this->trackedGraph.nodes.push_back(newNode);
+    }
+
+    // TODO add edges
+    return;
+  }
+
+  std::vector<std::vector<double>> costMatrix =
+      this->trackedGraph.getCostMatrix(this->graph);
+  std::vector<int> assignment;
+
+  std::cout << costMatrix.size() << ", " << costMatrix[0].size() << std::endl;
+  HungarianAlgorithm().Solve(costMatrix, assignment);
+  std::vector<bool> matched(this->graph.nodes.size(), false);
+
+  for (int i = 0; i < this->trackedGraph.nodes.size(); i++) {
+    int assigned = assignment[i];
+
+    if (assigned != -1 && costMatrix[i][assigned] <= this->gatingThreshold) {
+      cv::Mat measurement =
+          (cv::Mat_<float>(2, 1) << this->graph.nodes[assigned].pos.x,
+           this->graph.nodes[assigned].pos.y);
+
+      this->trackedGraph.nodes[i].kf.correct(measurement);
+      this->trackedGraph.nodes[i].missedFrames = 0;
+      this->trackedGraph.nodes[i].age++;
+      this->trackedGraph.nodes[i].pos = this->graph.nodes[assigned].pos;
+      matched[assigned] = true;
+    }
+
+    else {
+      this->trackedGraph.nodes[i].missedFrames++;
+    }
+  }
+
+  for (int i = 0; i < matched.size(); i++) {
+    if (matched[i])
+      continue;
+
+    Node detectedNode = this->graph.nodes[assignment[i]];
+
+    TrackedNode newNode(detectedNode.pos);
+    newNode.id = this->trackedGraph.nextID++;
+    newNode.screen_edge = detectedNode.screen_edge;
+    newNode.is_endpoint = detectedNode.is_endpoint;
+
+    this->trackedGraph.nodes.push_back(newNode);
+  }
+
+  this->trackedGraph.nodes.erase(
+      std::remove_if(
+          this->trackedGraph.nodes.begin(), this->trackedGraph.nodes.end(),
+          [](const TrackedNode &node) { return node.missedFrames > 5; }),
+      this->trackedGraph.nodes.end());
 }
 
 std::vector<double>
@@ -401,17 +636,18 @@ std::vector<Node> GraphExtractor::findPath(Node startPos) {
   std::vector<Node> path;
 
   // TODO find nearest node instead of only using exact position
-  std::vector<Edge *> connectedEdges = this->getConnectedEdges(startPos.id);
+  std::vector<Edge *> connectedEdges =
+      this->graph.getConnectedEdges(startPos.id);
 
   if (connectedEdges.size() > 0) {
     Node next;
 
     if (connectedEdges[0]->src == startPos.id) {
-      next = *this->nodeFromID(connectedEdges[0]->src);
+      next = *this->graph.nodeFromID(connectedEdges[0]->src);
     }
 
     else {
-      next = *this->nodeFromID(connectedEdges[0]->dst);
+      next = *this->graph.nodeFromID(connectedEdges[0]->dst);
     }
 
     path.push_back(startPos);

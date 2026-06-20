@@ -3,6 +3,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <opencv2/ximgproc.hpp>
+#include <vector>
 // #include <vector>
 
 int main() {
@@ -22,6 +23,8 @@ int main() {
             << std::endl;
 
   namedWindow("Skeleton + Graph", cv::WINDOW_NORMAL);
+  namedWindow("tracked", cv::WINDOW_NORMAL);
+  namedWindow("green", cv::WINDOW_NORMAL);
 
   GraphExtractor graphExtractor;
 
@@ -32,6 +35,10 @@ int main() {
       std::cerr << "Empty frame - exiting." << std::endl;
       break;
     }
+
+    // cv::Mat frame = cv::imread(
+    //     "/Users/williamdolier/Documents/school/se/cpp/pathfinding/line.jpg",
+    //     cv::IMREAD_COLOR);
 
     graphExtractor.loadImage(frame);
     graphExtractor.processImage();
@@ -47,6 +54,7 @@ int main() {
 
     std::vector<Node> nodes = graphExtractor.getNodes();
     std::vector<Edge> lines = graphExtractor.getEdges();
+    std::vector<TrackedNode> trackedNodes = graphExtractor.getTrackedNodes();
 
     std::vector<Node> path;
 
@@ -60,8 +68,24 @@ int main() {
       path = graphExtractor.findPath(nodes[0]);
     }
 
+    cv::Mat trackedNodesImg = skeletonizedImageGraph.clone();
+
+    for (const auto &node : trackedNodes) {
+      cv::Scalar color = cv::Scalar(255, 0, 0);
+
+      if (node.screen_edge)
+        color = cv::Scalar(0, 255, 0);
+
+      cv::circle(trackedNodesImg, node.pos, 3, color, -1);
+    }
+
     for (const auto &node : nodes) {
-      cv::circle(skeletonizedImageGraph, node.pos, 3, cv::Scalar(255, 0, 0), 5);
+      cv::Scalar color = cv::Scalar(255, 0, 0);
+
+      if (node.screen_edge)
+        color = cv::Scalar(0, 255, 0);
+
+      cv::circle(skeletonizedImageGraph, node.pos, 3, color, -1);
     }
 
     for (const auto &edge : lines) {
@@ -76,12 +100,27 @@ int main() {
                cv::Scalar(0, 0, 255), 3);
     }
 
+    std::vector<cv::Point> greenCenters = graphExtractor.extractGreen(frame);
+    cv::Mat green = frame.clone();
+
+    for (const auto &center : greenCenters) {
+      cv::circle(green, center, 25, cv::Scalar(0, 0, 255), -1);
+
+      cv::Point newCenter =
+          graphExtractor.cvtPoint(green, skeletonizedImageGraph, center);
+      cv::circle(skeletonizedImageGraph, newCenter, 5, cv::Scalar(0, 255, 255),
+                 -1);
+    }
+
     cv::imshow("Skeleton + Graph", skeletonizedImageGraph);
+    cv::imshow("tracked", trackedNodesImg);
+    cv::imshow("green", green);
 
     char key = (char)cv::waitKey(1);
     if (key == 27 || key == 'q' || key == 'Q')
       break;
   }
+  // cv::waitKey(0);
 
   cap.release();
   cv::destroyAllWindows();

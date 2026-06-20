@@ -6,6 +6,7 @@ struct Node {
   int id;
   cv::Point pos; // averaged position after merging
   bool is_endpoint;
+  bool screen_edge;
 };
 
 struct Edge {
@@ -19,9 +20,41 @@ struct Edge {
   }
 };
 
-struct Graph {
+class Graph {
+public:
   std::vector<Node> nodes;
   std::vector<Edge> edges;
+
+  int nextID = 0;
+
+  Node *nodeFromID(int id);
+  std::vector<Edge *> getConnectedEdges(int nodeID);
+};
+
+struct LocalEdge : Edge {};
+
+struct TrackedNode : Node {
+  TrackedNode(cv::Point pos);
+  int age = 0;
+  int missedFrames = 0;
+  cv::KalmanFilter kf = cv::KalmanFilter(4, 2, 0);
+};
+
+struct TrackedEdge : Edge {
+  uint32_t age = 0;
+};
+
+class TrackedGraph {
+public:
+  std::vector<TrackedNode> nodes;
+  std::vector<TrackedEdge> edges;
+
+  int nextID = 0;
+
+  TrackedNode *nodeFromID(int id);
+  std::vector<TrackedEdge *> getConnectedEdges(int nodeID);
+
+  std::vector<std::vector<double>> getCostMatrix(Graph &graph);
 };
 
 struct ComparePoints {
@@ -37,17 +70,22 @@ class GraphExtractor {
 public:
   GraphExtractor();
 
-  void loadImage(cv::Mat image);
+  void loadImage(cv::Mat &image);
   void processImage();
+  std::vector<cv::Point> extractGreen(cv::Mat &image);
+  cv::Point cvtPoint(cv::Mat &src, cv::Mat &dst, cv::Point point);
 
   std::vector<Node> getNodes();
   std::vector<Edge> getEdges();
+  std::vector<TrackedNode> getTrackedNodes();
+  std::vector<TrackedEdge> getTrackedEdges();
 
   cv::Mat getSkeletonizedImage();
   std::vector<Node> findPath(Node startPos);
 
   int pathLimit;
   int minEdgeSize;
+  int gatingThreshold;
 
 private:
   void extractNodes();
@@ -59,16 +97,18 @@ private:
 
   void removeShortEdges(std::vector<Edge> &edges);
   Edge mergeEdges(Edge edge1, Edge edge2);
+  void removeUnconnectedNodes();
 
   void findNextNode(std::vector<Node> &path);
   double calculateAngle(cv::Point point1, cv::Point point2);
 
-  Node *nodeFromID(int id);
-  std::vector<Edge *> getConnectedEdges(int nodeID);
+  void updateGraph();
+
   std::vector<double> getEdgeDirections(Node origin, std::vector<Edge *> edges);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;
 
   Graph graph;
+  TrackedGraph trackedGraph;
 };
