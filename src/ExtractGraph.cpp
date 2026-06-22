@@ -562,19 +562,19 @@ void GraphExtractor::updateGraph() {
       this->trackedGraph.getCostMatrix(this->graph);
   std::vector<int> assignment;
 
-  std::cout << costMatrix.size() << ", " << costMatrix[0].size() << std::endl;
   HungarianAlgorithm().Solve(costMatrix, assignment);
   std::vector<bool> matched(this->graph.nodes.size(), false);
 
   for (int i = 0; i < this->trackedGraph.nodes.size(); i++) {
     int assigned = assignment[i];
 
-    if (assigned != -1 && costMatrix[i][assigned] <= this->gatingThreshold) {
+    if (assigned != -1 && assigned < matched.size() &&
+        costMatrix[i][assigned] <= this->gatingThreshold) {
       cv::Mat measurement =
           (cv::Mat_<float>(2, 1) << this->graph.nodes[assigned].pos.x,
            this->graph.nodes[assigned].pos.y);
 
-      this->trackedGraph.nodes[i].kf.correct(measurement);
+      // this->trackedGraph.nodes[i].kf.correct(measurement);
       this->trackedGraph.nodes[i].missedFrames = 0;
       this->trackedGraph.nodes[i].age++;
       this->trackedGraph.nodes[i].pos = this->graph.nodes[assigned].pos;
