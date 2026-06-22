@@ -42,6 +42,8 @@ struct TrackedNode : Node {
 
 struct TrackedEdge : Edge {
   uint32_t age = 0;
+  double angleFromSrc;
+  double angleFromDst;
 };
 
 class TrackedGraph {
@@ -106,6 +108,8 @@ private:
   void updateGraph();
 
   std::vector<double> getEdgeDirections(Node origin, std::vector<Edge *> edges);
+
+  void edgeToTracked(const Edge &edge, TrackedEdge &trackedEdge);
 
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;

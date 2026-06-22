@@ -55,6 +55,7 @@ int main() {
     std::vector<Node> nodes = graphExtractor.getNodes();
     std::vector<Edge> lines = graphExtractor.getEdges();
     std::vector<TrackedNode> trackedNodes = graphExtractor.getTrackedNodes();
+    std::vector<TrackedEdge> trackedLines = graphExtractor.getTrackedEdges();
 
     std::vector<Node> path;
 
@@ -92,6 +93,12 @@ int main() {
       for (const auto pos : edge.path) {
         skeletonizedImageGraph.at<cv::Vec3b>(pos.y, pos.x) =
             cv::Vec3b(255, 0, 0);
+      }
+    }
+
+    for (const auto &edge : trackedLines) {
+      for (const auto pos : edge.path) {
+        trackedNodesImg.at<cv::Vec3b>(pos.y, pos.x) = cv::Vec3b(255, 0, 0);
       }
     }
 

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
 #include <opencv2/ximgproc.hpp>
 #include <stdexcept>
 #include <vector>
@@ -541,6 +542,7 @@ void GraphExtractor::updateGraph() {
     // node.pos = cv::Point(x, y);
   }
 
+  // If there are no nodes, add all nodes currently observec
   if (this->trackedGraph.nodes.size() == 0) {
     graph.nextID = 0;
 
@@ -554,17 +556,26 @@ void GraphExtractor::updateGraph() {
       this->trackedGraph.nodes.push_back(newNode);
     }
 
-    // TODO add edges
+    for (const Edge &edge : this->graph.edges) {
+      TrackedEdge trackedEdge;
+      this->edgeToTracked(edge, trackedEdge);
+
+      this->trackedGraph.edges.push_back(trackedEdge);
+    }
+
     return;
   }
 
+  // Match observed nodes to tracked nodes
   std::vector<std::vector<double>> costMatrix =
       this->trackedGraph.getCostMatrix(this->graph);
   std::vector<int> assignment;
 
   HungarianAlgorithm().Solve(costMatrix, assignment);
   std::vector<bool> matched(this->graph.nodes.size(), false);
+  std::vector<int> newIDs(this->graph.nodes.size(), 0);
 
+  // Update matched nodes
   for (int i = 0; i < this->trackedGraph.nodes.size(); i++) {
     int assigned = assignment[i];
 
@@ -583,6 +594,7 @@ void GraphExtractor::updateGraph() {
       this->trackedGraph.nodes[i].screen_edge =
           this->graph.nodes[assigned].screen_edge;
       matched[assigned] = true;
+      newIDs[assigned] = this->trackedGraph.nodes[i].id;
     }
 
     else {
@@ -590,6 +602,7 @@ void GraphExtractor::updateGraph() {
     }
   }
 
+  // Add nodes that weren't matched
   for (int i = 0; i < matched.size(); i++) {
     if (matched[i])
       continue;
@@ -602,13 +615,99 @@ void GraphExtractor::updateGraph() {
     newNode.is_endpoint = detectedNode.is_endpoint;
 
     this->trackedGraph.nodes.push_back(newNode);
+    newIDs[i] = newNode.id;
   }
 
+  // Remove nodes that haven't been seen in 5 frames
   this->trackedGraph.nodes.erase(
       std::remove_if(
           this->trackedGraph.nodes.begin(), this->trackedGraph.nodes.end(),
           [](const TrackedNode &node) { return node.missedFrames > 5; }),
       this->trackedGraph.nodes.end());
+
+  this->trackedGraph.edges.clear();
+
+  // Add edges to tracked graph
+  for (int i = 0; i < this->graph.nodes.size(); i++) {
+    Node &node = this->graph.nodes[i];
+    for (const Edge &edge : this->graph.edges) {
+      if (edge.src != node.id && edge.dst != node.id) {
+        continue;
+      }
+
+      int connectedID = edge.src == node.id ? edge.dst : edge.src;
+
+      auto connectedIt =
+          std::find_if(this->graph.nodes.begin(), this->graph.nodes.end(),
+                       [&connectedID](const Node &connected) {
+                         return connected.id == connectedID;
+                       });
+
+      if (connectedIt == this->graph.nodes.end()) {
+        std::cerr
+            << "Couldn't find the other node??? (This should never happen)\n";
+        return;
+      }
+
+      int connectedIndex =
+          std::distance(this->graph.nodes.begin(), connectedIt);
+
+      int trackedSrcIndex = edge.src == node.id ? i : connectedIndex;
+      int trackedDstIndex = edge.dst == node.id ? i : connectedIndex;
+
+      int trackedSrc = newIDs[trackedSrcIndex];
+      int trackedDst = newIDs[trackedDstIndex];
+
+      TrackedEdge tracked;
+      this->edgeToTracked(edge, tracked);
+
+      tracked.src = trackedSrc;
+      tracked.dst = trackedDst;
+
+      bool exists = false;
+      for (const TrackedEdge &existingTracked : this->trackedGraph.edges) {
+        if ((tracked.src == existingTracked.src &&
+             tracked.dst == existingTracked.dst) ||
+            (tracked.src == existingTracked.dst &&
+             tracked.dst == existingTracked.src)) {
+          exists = true;
+          break;
+        }
+      }
+
+      if (exists) {
+        continue;
+      }
+
+      this->trackedGraph.edges.push_back(tracked);
+    }
+  }
+
+  // Remove unconnected edges
+  for (int i = 0; i < this->trackedGraph.edges.size(); i++) {
+    const TrackedEdge &edge = this->trackedGraph.edges[i];
+
+    int src = edge.src;
+    int dst = edge.dst;
+
+    auto src_it = std::find_if(
+        this->trackedGraph.nodes.begin(), this->trackedGraph.nodes.end(),
+        [&src](const TrackedNode &node) { return node.id == src; });
+
+    auto dst_it = std::find_if(
+        this->trackedGraph.nodes.begin(), this->trackedGraph.nodes.end(),
+        [&dst](const TrackedNode &node) { return node.id == dst; });
+
+    if (src_it != this->trackedGraph.nodes.end() &&
+        dst_it != this->trackedGraph.nodes.end()) {
+      continue;
+    }
+
+    this->trackedGraph.edges.erase(this->trackedGraph.edges.begin() + i);
+    i--;
+  }
+
+  std::cout << this->trackedGraph.edges.size() << std::endl;
 }
 
 std::vector<double>
@@ -635,6 +734,18 @@ GraphExtractor::getEdgeDirections(Node origin, std::vector<Edge *> edges) {
   }
 
   return results;
+}
+
+void GraphExtractor::edgeToTracked(const Edge &edge, TrackedEdge &tracked) {
+  tracked.length = edge.length;
+  tracked.age = 0;
+
+  tracked.angleFromSrc = this->calculateAngle(
+      this->graph.nodeFromID(edge.src)->pos, edge.path[this->minEdgeSize - 1]);
+  tracked.angleFromDst =
+      this->calculateAngle(this->graph.nodeFromID(edge.dst)->pos,
+                           edge.path[edge.path.size() - this->minEdgeSize]);
+  tracked.path = edge.path;
 }
 
 std::vector<Node> GraphExtractor::findPath(Node startPos) {
