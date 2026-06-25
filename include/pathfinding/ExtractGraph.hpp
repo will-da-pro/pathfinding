@@ -82,6 +82,8 @@ public:
   std::vector<Edge> getEdges();
   std::vector<TrackedNode> getTrackedNodes();
   std::vector<TrackedEdge> getTrackedEdges();
+  TrackedNode *getTarget();
+  TrackedEdge *getCurrentEdge();
 
   cv::Mat getSkeletonizedImage();
   std::vector<Node> findPath(Node startPos);
@@ -93,6 +95,9 @@ public:
 private:
   void extractNodes();
   void extractEdges();
+
+  cv::Mat applySmoothVariableThreshold(const cv::Mat &grayImage);
+  cv::Mat flattenIllumination(const cv::Mat &grayImage);
 
   std::vector<cv::Point> getSurroundingPoints(cv::Point centre, int radius);
   std::vector<Edge> traceConnectedEdges(Node node);
@@ -111,9 +116,20 @@ private:
 
   void edgeToTracked(const Edge &edge, TrackedEdge &trackedEdge);
 
+  void findStartingEdge(int &trackingID, TrackedEdge **currentEdge);
+  void findNextTarget(int &trackingID, TrackedEdge **currentEdge);
+  TrackedEdge *closestToAngle(int currentNode,
+                              std::vector<TrackedEdge *> currentEdges,
+                              double targetAngle);
+
   cv::Mat rawImage;
   cv::Mat skeletonizedImage;
 
   Graph graph;
   TrackedGraph trackedGraph;
+  std::vector<cv::Point> green;
+
+  int currentTarget = -1;
+  TrackedEdge *currentEdge = nullptr;
+  bool searchingLineBreak;
 };

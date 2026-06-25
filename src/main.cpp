@@ -7,20 +7,32 @@
 // #include <vector>
 
 int main() {
-  cv::VideoCapture cap(1);
+  // cv::VideoCapture cap(1);
+  // if (!cap.isOpened()) {
+  //   std::cerr
+  //       << "Warning: Cannot open VideoCapture(1). Falling back to index 0..."
+  //       << std::endl;
+  //   cap.open(0);
+  //   if (!cap.isOpened()) {
+  //     std::cerr << "Error: Cannot open any camera!" << std::endl;
+  //     return -1;
+  //   }
+  // }
+  //
+  // std::cout << "Camera opened (index 1 or 0). Press ESC or 'q' to quit."
+  //           << std::endl;
+
+  cv::VideoCapture cap(
+      "/Users/williamdolier/Documents/school/se/cpp/pathfinding/rec.mp4");
   if (!cap.isOpened()) {
-    std::cerr
-        << "Warning: Cannot open VideoCapture(1). Falling back to index 0..."
-        << std::endl;
-    cap.open(0);
-    if (!cap.isOpened()) {
-      std::cerr << "Error: Cannot open any camera!" << std::endl;
-      return -1;
-    }
+    std::cerr << "Error: Could not open the video file." << std::endl;
+    return -1;
   }
 
-  std::cout << "Camera opened (index 1 or 0). Press ESC or 'q' to quit."
-            << std::endl;
+  double fps = cap.get(cv::CAP_PROP_FPS);
+  std::cout << "Playing video at " << fps << " FPS." << std::endl;
+
+  int delay = (fps > 0) ? static_cast<int>(1000 / fps) : 33;
 
   namedWindow("Skeleton + Graph", cv::WINDOW_NORMAL);
   namedWindow("tracked", cv::WINDOW_NORMAL);
@@ -56,6 +68,7 @@ int main() {
     std::vector<Edge> lines = graphExtractor.getEdges();
     std::vector<TrackedNode> trackedNodes = graphExtractor.getTrackedNodes();
     std::vector<TrackedEdge> trackedLines = graphExtractor.getTrackedEdges();
+    TrackedNode *target = graphExtractor.getTarget();
 
     std::vector<Node> path;
 
@@ -87,6 +100,10 @@ int main() {
         color = cv::Scalar(0, 255, 0);
 
       cv::circle(skeletonizedImageGraph, node.pos, 3, color, -1);
+    }
+
+    if (target) {
+      cv::circle(trackedNodesImg, target->pos, 3, cv::Scalar(255, 255, 0), -1);
     }
 
     for (const auto &edge : lines) {
@@ -123,7 +140,7 @@ int main() {
     cv::imshow("tracked", trackedNodesImg);
     cv::imshow("green", green);
 
-    char key = (char)cv::waitKey(1);
+    char key = (char)cv::waitKey(delay);
     if (key == 27 || key == 'q' || key == 'Q')
       break;
   }

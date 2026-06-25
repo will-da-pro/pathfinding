@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
+#include <numbers>
 #include <opencv2/ximgproc.hpp>
 #include <stdexcept>
 #include <vector>
@@ -63,7 +64,7 @@ std::vector<std::vector<double>> TrackedGraph::getCostMatrix(Graph &graph) {
 GraphExtractor::GraphExtractor() {
   std::cout << "Initialising graph extractor..." << std::endl;
   this->pathLimit = 5;
-  this->minEdgeSize = 15;
+  this->minEdgeSize = 25;
   this->gatingThreshold = 10;
 }
 
@@ -75,14 +76,21 @@ void GraphExtractor::loadImage(cv::Mat &image) {
 
   cv::Mat gray, binary;
   cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
-  GaussianBlur(gray, gray, cv::Size(5, 5), 1.5);
+  GaussianBlur(gray, gray, cv::Size(5, 5), 0);
 
-  // cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-  //                       cv::THRESH_BINARY_INV, 11, 2);
+  cv::Mat flat;
+  flat = this->flattenIllumination(gray);
 
-  cv::threshold(gray, binary, 60, 255, cv::THRESH_BINARY_INV);
+  cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+                        cv::THRESH_BINARY_INV, 55, 10);
 
-  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+  // cv::imshow("gray", flat);
+
+  // cv::threshold(gray, binary, 120, 255, cv::THRESH_BINARY_INV);
+  // binary = this->applySmoothVariableThreshold(gray);
+
+  // cv::imshow("binary", binary);
+  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
 
   cv::Mat opened_image;
   cv::morphologyEx(binary, opened_image, cv::MORPH_OPEN, kernel);
@@ -114,6 +122,64 @@ void GraphExtractor::loadImage(cv::Mat &image) {
 
   this->rawImage = image;
   this->skeletonizedImage = skeleton;
+}
+
+cv::Mat GraphExtractor::flattenIllumination(const cv::Mat &grayImage) {
+  cv::Mat localBackground;
+
+  // 1. Create a massive kernel (larger than the width of your black line)
+  // This will completely "swallow" the black line, leaving ONLY the floor and
+  // the glare.
+  cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(41, 41));
+  cv::morphologyEx(grayImage, localBackground, cv::MORPH_CLOSE, kernel);
+
+  // cv::imshow("bg", localBackground);
+
+  // At this point, 'localBackground' is an image of your floor
+  // AS IF THE BLACK LINE WASN'T EVEN THERE. It contains just the glare and dark
+  // corners.
+
+  // 2. Divide the original image by the background illumination map
+  // Formula: Corrected = (Original / Background) * 255
+  cv::Mat corrected;
+  cv::divide(grayImage, localBackground, corrected, 255.0);
+
+  return corrected;
+}
+
+cv::Mat GraphExtractor::applySmoothVariableThreshold(const cv::Mat &grayImage) {
+  int rows = grayImage.rows;
+  int cols = grayImage.cols;
+
+  // 1. Create a threshold map matrix (CV_8UC1) filled with default values
+  cv::Mat thresholdMap = cv::Mat::zeros(grayImage.size(), CV_8UC1);
+
+  cv::Point center(cols / 2, rows / 2);
+  double maxDist = std::sqrt(center.x * center.x + center.y * center.y);
+
+  int centerThresh = 160; // High threshold in the middle
+  int edgeThresh = 70;    // Low threshold at the corners
+
+  // 2. Populate the threshold map based on distance from the center
+  for (int y = 0; y < rows; ++y) {
+    for (int x = 0; x < cols; ++x) {
+      double dist = std::sqrt((x - center.x) * (x - center.x) +
+                              (y - center.y) * (y - center.y));
+      double factor =
+          std::pow(dist / maxDist, 2); // 0.0 at center, 1.0 at furthest corner
+
+      // Linear interpolation between center and edge thresholds
+      int customThresh = centerThresh - (factor * (centerThresh - edgeThresh));
+      thresholdMap.at<uchar>(y, x) = static_cast<uchar>(customThresh);
+    }
+  }
+
+  // 3. Compare the image directly with the custom threshold map
+  // If grayImage(y,x) > thresholdMap(y,x), result is 255, else 0
+  cv::Mat binaryOutput;
+  cv::compare(grayImage, thresholdMap, binaryOutput, cv::CMP_LT);
+
+  return binaryOutput;
 }
 
 std::vector<cv::Point> GraphExtractor::extractGreen(cv::Mat &image) {
@@ -199,6 +265,7 @@ void GraphExtractor::processImage() {
   this->removeShortEdges(this->graph.edges);
   this->removeUnconnectedNodes();
   this->updateGraph();
+  this->findNextTarget(this->currentTarget, &this->currentEdge);
 }
 
 std::vector<Node> GraphExtractor::getNodes() { return this->graph.nodes; }
@@ -546,6 +613,8 @@ void GraphExtractor::updateGraph() {
   if (this->trackedGraph.nodes.size() == 0) {
     graph.nextID = 0;
 
+    std::vector<int> newIDs;
+
     for (const Node &node : this->graph.nodes) {
       TrackedNode newNode(node.pos);
 
@@ -554,11 +623,36 @@ void GraphExtractor::updateGraph() {
       newNode.screen_edge = node.screen_edge;
 
       this->trackedGraph.nodes.push_back(newNode);
+      newIDs.push_back(newNode.id);
     }
 
-    for (const Edge &edge : this->graph.edges) {
+    for (int i = 0; i < this->graph.edges.size(); i++) {
+      Edge edge = this->graph.edges[i];
       TrackedEdge trackedEdge;
       this->edgeToTracked(edge, trackedEdge);
+
+      // TODO FIX
+      int src = edge.src;
+      int dst = edge.dst;
+
+      auto src_it =
+          std::find_if(this->graph.nodes.begin(), this->graph.nodes.end(),
+                       [&src](const Node &node) { return node.id == src; });
+
+      auto dst_it =
+          std::find_if(this->graph.nodes.begin(), this->graph.nodes.end(),
+                       [&dst](const Node &node) { return node.id == dst; });
+
+      if (src_it != this->graph.nodes.end() &&
+          dst_it != this->graph.nodes.end()) {
+        continue;
+      }
+
+      int srcIndex = newIDs[std::distance(this->graph.nodes.begin(), src_it)];
+      int dstIndex = newIDs[std::distance(this->graph.nodes.begin(), dst_it)];
+
+      trackedEdge.src = newIDs[srcIndex];
+      trackedEdge.dst = newIDs[dstIndex];
 
       this->trackedGraph.edges.push_back(trackedEdge);
     }
@@ -773,4 +867,204 @@ std::vector<Node> GraphExtractor::findPath(Node startPos) {
   }
 
   return path;
+}
+
+void GraphExtractor::findStartingEdge(int &trackingID,
+                                      TrackedEdge **currentEdge) {
+  trackingID = -1;
+  std::cout << "current: " << currentEdge << std::endl;
+
+  if (this->trackedGraph.edges.size() == 0)
+    return;
+
+  int largest = 0;
+  for (const TrackedEdge &edge : this->trackedGraph.edges) {
+    std::cout << "idk\n";
+    if (edge.length > largest) {
+      std::cout << "largest\n";
+      **currentEdge = edge;
+      largest = edge.length;
+    }
+  }
+
+  std::cout << (*currentEdge)->src << std::endl;
+  std::cout << (*currentEdge)->dst << std::endl;
+
+  TrackedNode *src = this->trackedGraph.nodeFromID((*currentEdge)->src);
+  TrackedNode *dst = this->trackedGraph.nodeFromID((*currentEdge)->dst);
+
+  trackingID =
+      src->pos.y > dst->pos.y ? (*currentEdge)->dst : (*currentEdge)->src;
+}
+
+void GraphExtractor::findNextTarget(int &trackingID,
+                                    TrackedEdge **currentEdge) {
+  std::cout << currentEdge << ", " << trackingID << std::endl;
+  if (!currentEdge || trackingID < 0) {
+    std::cout << "Finding starting edge\n";
+    *currentEdge = new TrackedEdge;
+    this->findStartingEdge(trackingID, currentEdge);
+    std::cout << "Finished looking for starting edge\n";
+    return;
+  }
+
+  std::cout << "a\n";
+  TrackedNode *currentNodePointer = this->trackedGraph.nodeFromID(trackingID);
+  std::cout << "b\n";
+
+  if (!currentNodePointer) {
+    std::cout << "node doesn't exist\n";
+    this->currentTarget = -1;
+    this->findStartingEdge(trackingID, currentEdge);
+    return;
+  }
+
+  TrackedNode currentNode = *currentNodePointer;
+  std::cout << "c\n";
+
+  if (currentNode.screen_edge)
+    return;
+  else if (currentNode.is_endpoint) {
+    // TODO logic for breaks in line
+    return;
+  }
+
+  std::vector<TrackedEdge *> surroundingEdges;
+
+  for (TrackedEdge &edge : this->trackedGraph.edges) {
+    if (edge.src == trackingID || edge.dst == trackingID)
+      surroundingEdges.push_back(&edge);
+  }
+  std::cout << "d\n";
+
+  std::cout << currentEdge << std::endl;
+
+  if (surroundingEdges.size() == 0) {
+    std::cerr << "No surrounding edges to node (This should never happen)\n";
+    return;
+  }
+  std::cout << "d0\n";
+  std::cout << (*currentEdge)->angleFromSrc << std::endl;
+
+  double currentAngle = trackingID == (*currentEdge)->src
+                            ? (*currentEdge)->angleFromSrc
+                            : (*currentEdge)->angleFromDst;
+  std::cout << "d1\n";
+
+  if (surroundingEdges.size() < 3) {
+
+    double targetAngle =
+        std::fmod(currentAngle + std::numbers::pi, 2 * std::numbers::pi) -
+        std::numbers::pi;
+
+    TrackedEdge *closestEdge =
+        this->closestToAngle(trackingID, surroundingEdges, targetAngle);
+
+    *this->currentEdge = *closestEdge;
+    this->currentTarget =
+        trackingID == closestEdge->src ? closestEdge->dst : closestEdge->src;
+
+    return;
+  }
+  std::cout << "e\n";
+
+  std::vector<double> surroundingGreen;
+  double minGreenDist = 40;
+
+  for (cv::Point greenPos : this->green) {
+    double dist = std::sqrt(std::pow(greenPos.x - currentNode.pos.x, 2) +
+                            std::pow(greenPos.y - currentNode.pos.y, 2));
+    if (dist > minGreenDist)
+      continue;
+
+    double angle = this->calculateAngle(currentNode.pos, greenPos);
+    surroundingGreen.push_back(angle);
+  }
+  std::cout << "f\n";
+
+  double targetLeft =
+      std::fmod(currentAngle - std::numbers::pi / 2, 2 * std::numbers::pi) -
+      std::numbers::pi;
+  double targetRight =
+      std::fmod(currentAngle + std::numbers::pi / 2, 2 * std::numbers::pi) -
+      std::numbers::pi;
+  double targetStraight =
+      std::fmod(currentAngle + std::numbers::pi, 2 * std::numbers::pi) -
+      std::numbers::pi;
+
+  TrackedEdge *leftEdge =
+      this->closestToAngle(trackingID, surroundingEdges, targetLeft);
+  TrackedEdge *rightEdge =
+      this->closestToAngle(trackingID, surroundingEdges, targetRight);
+  TrackedEdge *straightEdge =
+      this->closestToAngle(trackingID, surroundingEdges, targetStraight);
+
+  bool greenLeft = false;
+  bool greenRight = false;
+
+  for (double &greenAngle : surroundingGreen) {
+    double diff = currentAngle - greenAngle;
+    diff = std::atan2(std::sin(diff), std::cos(diff));
+
+    if (diff < 0 && diff > -std::numbers::pi / 2)
+      greenLeft = true;
+    if (diff > 0 && diff < std::numbers::pi / 2)
+      greenRight = true;
+  }
+  std::cout << "g\n";
+
+  if (greenRight && greenLeft) {
+    trackingID = trackingID == (*currentEdge)->src ? (*currentEdge)->dst
+                                                   : (*currentEdge)->src;
+    return;
+  }
+
+  else if (greenRight) {
+    **currentEdge = *rightEdge;
+  }
+
+  else if (greenLeft) {
+    **currentEdge = *leftEdge;
+  }
+
+  else {
+    **currentEdge = *straightEdge;
+  }
+
+  trackingID = trackingID == (*currentEdge)->src ? (*currentEdge)->dst
+                                                 : (*currentEdge)->src;
+  std::cout << "h\n";
+}
+
+TrackedEdge *
+GraphExtractor::closestToAngle(int currentNode,
+                               std::vector<TrackedEdge *> currentEdges,
+                               double targetAngle) {
+  TrackedEdge *closestEdge = currentEdges[0];
+  double closestAngle = currentNode == currentEdge->src
+                            ? closestEdge->angleFromSrc
+                            : closestEdge->angleFromDst;
+
+  for (TrackedEdge *edge : currentEdges) {
+    double angle =
+        currentNode == edge->src ? edge->angleFromSrc : edge->angleFromDst;
+
+    double closestDiff = targetAngle - closestAngle;
+    closestDiff =
+        std::abs(std::atan2(std::sin(closestDiff), std::cos(closestDiff)));
+
+    double diff = targetAngle - angle;
+    diff = std::abs(std::atan2(std::sin(diff), std::cos(diff)));
+
+    if (diff < closestDiff) {
+      closestAngle = angle;
+      closestEdge = edge;
+    }
+  }
+
+  return closestEdge;
+}
+
+TrackedNode *GraphExtractor::getTarget() {
+  return this->trackedGraph.nodeFromID(this->currentTarget);
 }
