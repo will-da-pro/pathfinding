@@ -33,8 +33,6 @@ TrackedNode::TrackedNode(cv::Point pos) {
 }
 
 std::vector<std::vector<double>> TrackedGraph::getCostMatrix(Graph &graph) {
-  // TODO apply kalman filter
-
   // The vector must be square
   int size = this->nodes.size() > graph.nodes.size() ? this->nodes.size()
                                                      : graph.nodes.size();
@@ -437,6 +435,16 @@ void GraphExtractor::removeShortEdges(std::vector<Edge> &edges) {
 }
 
 Edge GraphExtractor::mergeEdges(Edge edge1, Edge edge2) {
+  /**
+   * @brief Merge 2 connected edges into one.
+   *
+   * Connects both path variables, and updates src, dst and length. Edges must
+   * be connected, i.e. they must share a common endpoint (src/dst).
+   *
+   * @param edge1 First edge.
+   * @param edge2 Second edge.
+   * @return Combined edge.
+   */
   if (edge1.dst == edge2.src) {
     edge1.path.insert(edge1.path.end(), edge2.path.begin() + 1,
                       edge2.path.end());
@@ -469,6 +477,9 @@ Edge GraphExtractor::mergeEdges(Edge edge1, Edge edge2) {
 }
 
 void GraphExtractor::removeUnconnectedNodes() {
+  /**
+   * @brief Remove all nodes not connected to an edge.
+   */
   for (int i = 0; i < this->graph.nodes.size(); i++) {
     Node node = this->graph.nodes[i];
 
@@ -488,11 +499,23 @@ void GraphExtractor::removeUnconnectedNodes() {
 }
 
 std::vector<Edge> GraphExtractor::traceConnectedEdges(Node node) {
+  /**
+   * @brief Find all edges connected to a node.
+   *
+   * Traces over the skeletonized image to find connected nodes, and turns the
+   * traces into edges.
+   *
+   * @param node Node to trace edges from.
+   * @return Connected edges.
+   */
+  // Get all points surrounding current point
   std::vector<Edge> connectedEdges;
   std::vector<cv::Point> surroundingPoints =
       this->getSurroundingPoints(node.pos, 3);
 
+  // Iterate over surrounding points
   for (const auto &point : surroundingPoints) {
+    // Ignore the current point
     if (point == node.pos)
       continue;
 
@@ -502,6 +525,7 @@ std::vector<Edge> GraphExtractor::traceConnectedEdges(Node node) {
     edge.path.push_back(node.pos);
     edge.path.push_back(point);
 
+    // Follow path until the next node
     edge.dst = this->followToNode(edge.path).id;
     edge.length = edge.path.size();
 
@@ -512,8 +536,22 @@ std::vector<Edge> GraphExtractor::traceConnectedEdges(Node node) {
 }
 
 double GraphExtractor::calculateAngle(cv::Point point1, cv::Point point2) {
+  /**
+   * @brief Calculate the angle of point2 from point1.
+   *
+   * Calculates the angle of point2 relative to point1.
+   *
+   * @param point1 First point.
+   * @param point2 Second point.
+   * @return Angle of second point from first point.
+   */
   int rise = point2.y - point1.y;
   int run = point2.x - point1.x;
+
+  // Don't divide by 0!
+  if (run == 0) {
+    return rise > 0 ? std::numbers::pi : -std::numbers::pi;
+  }
 
   double angle = std::atan2(rise, run);
   return angle;
@@ -861,6 +899,17 @@ void GraphExtractor::updateGraph() {
 
 std::vector<double>
 GraphExtractor::getEdgeDirections(Node origin, std::vector<Edge *> edges) {
+  /**
+   * @brief Get the direction of edges relative to a central node.
+   *
+   * Iterates over each edge, and finds the angle of the edge relative to the
+   * origin. Assumes that all edges are connected to the origin.
+   *
+   * @param origin Central node to get directions from.
+   * @param[in] edges Edges to get the directions of.
+   * @return A vector the same size as edges where output[i] is the angle of
+   * edges[i] from origin.
+   */
   std::vector<double> results;
 
   for (const Edge *edge : edges) {
@@ -886,6 +935,14 @@ GraphExtractor::getEdgeDirections(Node origin, std::vector<Edge *> edges) {
 }
 
 void GraphExtractor::edgeToTracked(const Edge &edge, TrackedEdge &tracked) {
+  /**
+   * @brief Convert an observed edge into a tracked edge.
+   *
+   * Copies length, angles from src and dst, and path.
+   *
+   * @param[in] edge Edge to convert.
+   * @param[out] tracked Tracked edge to output edge data to.
+   */
   tracked.length = edge.length;
   tracked.age = 0;
 
@@ -898,6 +955,13 @@ void GraphExtractor::edgeToTracked(const Edge &edge, TrackedEdge &tracked) {
 }
 
 std::vector<Node> GraphExtractor::findPath(Node startPos) {
+  /**
+   * @brief find path using only the highest node in the frame.
+   *
+   * Old path finding algorithm, should not be used.
+   *
+   * @param startPos Node to start on.
+   */
   std::vector<Node> path;
 
   // TODO find nearest node instead of only using exact position
@@ -926,24 +990,26 @@ std::vector<Node> GraphExtractor::findPath(Node startPos) {
 
 void GraphExtractor::findStartingEdge(int &trackingID,
                                       TrackedEdge **currentEdge) {
+  /**
+   * @brief Find a new starting edge for pathfinging.
+   *
+   * Finds the longest edge and follows in the direction up the screen.
+   *
+   * @param[out] trackingID ID of the node to track.
+   * @param[out] currentEdge Current edge to track.
+   */
   trackingID = -1;
-  // std::cout << "current: " << currentEdge << std::endl;
 
   if (this->trackedGraph.edges.size() == 0)
     return;
 
   int largest = 0;
   for (const TrackedEdge &edge : this->trackedGraph.edges) {
-    // std::cout << "idk\n";
     if (edge.length > largest) {
-      // std::cout << "largest\n";
       **currentEdge = edge;
       largest = edge.length;
     }
   }
-
-  // std::cout << (*currentEdge)->src << std::endl;
-  // std::cout << (*currentEdge)->dst << std::endl;
 
   TrackedNode *src = this->trackedGraph.nodeFromID((*currentEdge)->src);
   TrackedNode *dst = this->trackedGraph.nodeFromID((*currentEdge)->dst);
@@ -953,6 +1019,12 @@ void GraphExtractor::findStartingEdge(int &trackingID,
 }
 
 double GraphExtractor::wrapAngle(double angle) {
+  /**
+   * @brief Wrap angle within the range (-pi, pi].
+   *
+   * @param angle Angle to wrap.
+   * @return Wrapped angle.
+   */
   constexpr double two_pi = 2.0 * std::numbers::pi;
   double wrapped = std::remainder(angle, two_pi);
 
@@ -963,6 +1035,13 @@ double GraphExtractor::wrapAngle(double angle) {
 }
 
 double GraphExtractor::addAngles(double angle1, double angle2) {
+  /**
+   * @brief Adds 2 angles and wraps them.
+   *
+   * @param angle1 First angle.
+   * @param angle2 Second angle.
+   * @return Wrapped sum of angles.
+   */
   double sum = angle1 + angle2;
   double wrapped = this->wrapAngle(sum);
   return wrapped;
@@ -970,13 +1049,22 @@ double GraphExtractor::addAngles(double angle1, double angle2) {
 
 void GraphExtractor::findNextTarget(int &trackingID,
                                     TrackedEdge **currentEdge) {
+  /**
+   * @brief Find the next node to track based on the tracked graph.
+   *
+   * @param[in,out] trackingID Current node being tracked.
+   * @param[in,out] currentEdge Current edge being tracked.
+   */
+  // Handle breaks in the line.
   if (this->searchLineBreak) {
     std::cout << "Line break\n";
+    // Return if there are no nodes being tracked currently.
     if (this->trackedGraph.nodes.size() == 0)
       return;
 
     std::vector<TrackedNode> nodesInRange;
 
+    // Find all nodes within range of the projected line.
     for (TrackedNode &node : this->trackedGraph.nodes) {
       double dist = this->searchDistance(node.pos);
       if (dist > this->searchMinDist)
@@ -985,9 +1073,11 @@ void GraphExtractor::findNextTarget(int &trackingID,
       nodesInRange.push_back(node);
     }
 
+    // Return if no nodes are in range.
     if (nodesInRange.size() == 0)
       return;
 
+    // Get the closest node to the projected line.
     TrackedNode closestNode = nodesInRange[0];
     double closestDist =
         this->calculateDist(this->searchLastPoint, closestNode.pos);
@@ -1002,21 +1092,24 @@ void GraphExtractor::findNextTarget(int &trackingID,
       closestNode = node;
     }
 
+    // Get edges surrounding closest node
     std::vector<TrackedEdge *> surroundingEdges;
-
-    if (surroundingEdges.size() == 0) {
-      return;
-    }
 
     for (TrackedEdge &edge : this->trackedGraph.edges) {
       if (edge.src == closestNode.id || edge.dst == closestNode.id)
         surroundingEdges.push_back(&edge);
     }
+
+    if (surroundingEdges.size() == 0) {
+      return;
+    }
+
     std::cout << "ab\n";
 
     std::cout << closestNode.id << ", " << surroundingEdges.size() << std::endl;
     std::cout << this->searchDirection << std::endl;
 
+    // Update edge and target
     TrackedEdge *newEdge = this->closestToAngle(
         closestNode.id, surroundingEdges, this->searchDirection);
     std::cout << "b\n";
@@ -1028,33 +1121,29 @@ void GraphExtractor::findNextTarget(int &trackingID,
     this->searchLineBreak = false;
   }
 
-  // std::cout << currentEdge << ", " << trackingID << std::endl;
+  // Reset tracked node and edge
   if (!currentEdge || trackingID < 0) {
-    // std::cout << "Finding starting edge\n";
     *currentEdge = new TrackedEdge;
     this->findStartingEdge(trackingID, currentEdge);
-    // std::cout << "Finished looking for starting edge\n";
     return;
   }
 
-  // std::cout << "a\n";
   TrackedNode *currentNodePointer = this->trackedGraph.nodeFromID(trackingID);
-  // std::cout << "b\n";
 
+  // Make sure the current node exists
   if (!currentNodePointer) {
-    // std::cout << "node doesn't exist\n";
     this->currentTarget = -1;
     this->findStartingEdge(trackingID, currentEdge);
     return;
   }
 
   TrackedNode currentNode = *currentNodePointer;
-  // std::cout << "c\n";
 
+  // Don't attempt to find another node if the node is on the screen edge.
   if (currentNode.screen_edge)
     return;
+  // Handle line breaks
   else if (currentNode.is_endpoint) {
-    // TODO finish logic
     this->searchLineBreak = true;
     this->searchLastNode = currentNode.id;
     this->searchLastPoint = currentNode.pos;
@@ -1066,28 +1155,25 @@ void GraphExtractor::findNextTarget(int &trackingID,
     return;
   }
 
+  // Get all edges surrounding the tracked node
   std::vector<TrackedEdge *> surroundingEdges;
 
   for (TrackedEdge &edge : this->trackedGraph.edges) {
     if (edge.src == trackingID || edge.dst == trackingID)
       surroundingEdges.push_back(&edge);
   }
-  // std::cout << "d\n";
-
-  // std::cout << currentEdge << std::endl;
 
   if (surroundingEdges.size() == 0) {
-    std::cerr << "No surrounding edges to node (This should never happen)\n";
+    std::cerr << "No surrounding edges to node.\n";
     return;
   }
-  // std::cout << "d0\n";
-  // std::cout << (*currentEdge)->angleFromSrc << std::endl;
 
+  // Get the angle of the tracked edge from the tracked node.
   double currentAngle = trackingID == (*currentEdge)->src
                             ? (*currentEdge)->angleFromSrc
                             : (*currentEdge)->angleFromDst;
-  // std::cout << "d1\n";
 
+  // Only 2 surrounding edges, not an intersection.
   if (surroundingEdges.size() < 3) {
     double targetAngle = this->addAngles(currentAngle, std::numbers::pi);
 
@@ -1100,8 +1186,8 @@ void GraphExtractor::findNextTarget(int &trackingID,
 
     return;
   }
-  // std::cout << "e\n";
 
+  // Find adjacent green squares
   std::vector<double> surroundingGreen;
   double minGreenDist = 40;
 
@@ -1113,12 +1199,13 @@ void GraphExtractor::findNextTarget(int &trackingID,
     double angle = this->calculateAngle(currentNode.pos, greenPos);
     surroundingGreen.push_back(angle);
   }
-  // std::cout << "f\n";
 
+  // Target angles for going straight, and turning left and right.
   double targetLeft = this->addAngles(currentAngle, -std::numbers::pi / 2);
   double targetRight = this->addAngles(currentAngle, std::numbers::pi / 2);
   double targetStraight = this->addAngles(currentAngle, std::numbers::pi);
 
+  // Find closest edges to target angles.
   TrackedEdge *leftEdge =
       this->closestToAngle(trackingID, surroundingEdges, targetLeft);
   TrackedEdge *rightEdge =
@@ -1126,6 +1213,7 @@ void GraphExtractor::findNextTarget(int &trackingID,
   TrackedEdge *straightEdge =
       this->closestToAngle(trackingID, surroundingEdges, targetStraight);
 
+  // Check if there is green to left or right of line.
   bool greenLeft = false;
   bool greenRight = false;
 
@@ -1137,8 +1225,8 @@ void GraphExtractor::findNextTarget(int &trackingID,
     if (diff > 0 && diff < std::numbers::pi / 2)
       greenRight = true;
   }
-  // std::cout << "g\n";
 
+  // Handle green turn logic.
   if (greenRight && greenLeft) {
     trackingID = trackingID == (*currentEdge)->src ? (*currentEdge)->dst
                                                    : (*currentEdge)->src;
@@ -1159,7 +1247,6 @@ void GraphExtractor::findNextTarget(int &trackingID,
 
   trackingID = trackingID == (*currentEdge)->src ? (*currentEdge)->dst
                                                  : (*currentEdge)->src;
-  // std::cout << "h\n";
 }
 
 double GraphExtractor::searchDistance(cv::Point point) {

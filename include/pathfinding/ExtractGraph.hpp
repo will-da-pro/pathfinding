@@ -86,7 +86,7 @@ public:
   TrackedEdge *getCurrentEdge();
 
   cv::Mat getSkeletonizedImage();
-  std::vector<Node> findPath(Node startPos);
+  [[deprecated]] std::vector<Node> findPath(Node startPos);
 
   int pathLimit;
   int minEdgeSize;
