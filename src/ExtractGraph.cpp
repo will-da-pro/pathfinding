@@ -613,6 +613,15 @@ void GraphExtractor::findNextNode(std::vector<Node> &path) {
 }
 
 void GraphExtractor::updateGraph() {
+  /**
+   * @brief Update the tracked graph with the observed graph.
+   *
+   * Applies the Hungarian algorithm to the observed and tracked nodes
+   * to find the lowest cost pairings of nodes between frames to track
+   * them.
+   *
+   */
+  // Update Kalman filter for all tracked nodes
   for (TrackedNode &node : this->trackedGraph.nodes) {
     cv::Mat prediction = node.kf.predict();
 
@@ -622,32 +631,39 @@ void GraphExtractor::updateGraph() {
     // node.pos = cv::Point(x, y);
   }
 
-  // If there are no nodes, add all nodes currently observec
+  // If there are no nodes, add all nodes currently observed
   if (this->trackedGraph.nodes.size() == 0) {
     graph.nextID = 0;
 
     std::vector<int> newIDs;
 
+    // Add every observed node to the tracked graph
     for (const Node &node : this->graph.nodes) {
       TrackedNode newNode(node.pos);
 
+      // Give the node a new ID
       newNode.id = graph.nextID++;
       newNode.is_endpoint = node.is_endpoint;
       newNode.screen_edge = node.screen_edge;
 
+      // Add to tracked graph
       this->trackedGraph.nodes.push_back(newNode);
+
+      // Add the new ID to a vector so it can be used to update tracked edges
       newIDs.push_back(newNode.id);
     }
 
+    // Iterate over every known edge
     for (int i = 0; i < this->graph.edges.size(); i++) {
       Edge edge = this->graph.edges[i];
       TrackedEdge trackedEdge;
       this->edgeToTracked(edge, trackedEdge);
 
-      // TODO FIX
+      // Get the IDs of the edge dst and src in the observed graph
       int src = edge.src;
       int dst = edge.dst;
 
+      // Find the index of the dst and src nodes within the observed graph
       auto src_it =
           std::find_if(this->graph.nodes.begin(), this->graph.nodes.end(),
                        [&src](const Node &node) { return node.id == src; });
@@ -656,14 +672,17 @@ void GraphExtractor::updateGraph() {
           std::find_if(this->graph.nodes.begin(), this->graph.nodes.end(),
                        [&dst](const Node &node) { return node.id == dst; });
 
+      // Handle any edge case where the nodes don't exist
       if (src_it != this->graph.nodes.end() &&
           dst_it != this->graph.nodes.end()) {
         continue;
       }
 
+      // Find the new IDs of the nodes in the tracked graph
       int srcIndex = newIDs[std::distance(this->graph.nodes.begin(), src_it)];
       int dstIndex = newIDs[std::distance(this->graph.nodes.begin(), dst_it)];
 
+      // Update the new tracked edge and add to the tracked graph
       trackedEdge.src = newIDs[srcIndex];
       trackedEdge.dst = newIDs[dstIndex];
 
@@ -678,21 +697,26 @@ void GraphExtractor::updateGraph() {
       this->trackedGraph.getCostMatrix(this->graph);
   std::vector<int> assignment;
 
+  // Apply Hungarian algorithm to find lowest cost pairings of nodes between
+  // frames
   HungarianAlgorithm().Solve(costMatrix, assignment);
   std::vector<bool> matched(this->graph.nodes.size(), false);
   std::vector<int> newIDs(this->graph.nodes.size(), 0);
 
-  // Update matched nodes
+  // Update tracked graph with new matches
   for (int i = 0; i < this->trackedGraph.nodes.size(); i++) {
     int assigned = assignment[i];
 
+    // Check if a tracked node was observed in this frame
     if (assigned != -1 && assigned < matched.size() &&
         costMatrix[i][assigned] <= this->gatingThreshold) {
-      cv::Mat measurement = cv::Mat_<float>(
-          {2, 1}, {static_cast<float>(this->graph.nodes[assigned].pos.x),
-                   static_cast<float>(this->graph.nodes[assigned].pos.y)});
 
+      // cv::Mat measurement = cv::Mat_<float>(
+      //     {2, 1}, {static_cast<float>(this->graph.nodes[assigned].pos.x),
+      //              static_cast<float>(this->graph.nodes[assigned].pos.y)});
       // this->trackedGraph.nodes[i].kf.correct(measurement);
+
+      // Update the tracked node with data from the observed node
       this->trackedGraph.nodes[i].missedFrames = 0;
       this->trackedGraph.nodes[i].age++;
       this->trackedGraph.nodes[i].pos = this->graph.nodes[assigned].pos;
@@ -704,46 +728,61 @@ void GraphExtractor::updateGraph() {
       newIDs[assigned] = this->trackedGraph.nodes[i].id;
     }
 
+    // If it was not observed, update its missed frames
     else {
       this->trackedGraph.nodes[i].missedFrames++;
     }
   }
 
-  // Add nodes that weren't matched
+  // If there was no valid match found for a node, add it to the tracked graph
   for (int i = 0; i < matched.size(); i++) {
     if (matched[i])
       continue;
 
+    // Get the new observed node
     Node detectedNode = this->graph.nodes[assignment[i]];
 
+    // Create a new tracked node
     TrackedNode newNode(detectedNode.pos);
     newNode.id = this->trackedGraph.nextID++;
     newNode.screen_edge = detectedNode.screen_edge;
     newNode.is_endpoint = detectedNode.is_endpoint;
 
+    // Add the node to the tracked graph
     this->trackedGraph.nodes.push_back(newNode);
     newIDs[i] = newNode.id;
   }
 
-  // Remove nodes that haven't been seen in 5 frames
+  // Remove nodes that haven't been seen in 5 frames, and nodes that are less
+  // than 5 frames old that haven't been seen in 1 or more frames
   this->trackedGraph.nodes.erase(
-      std::remove_if(
-          this->trackedGraph.nodes.begin(), this->trackedGraph.nodes.end(),
-          [](const TrackedNode &node) { return node.missedFrames > 5; }),
+      std::remove_if(this->trackedGraph.nodes.begin(),
+                     this->trackedGraph.nodes.end(),
+                     [](const TrackedNode &node) {
+                       return node.missedFrames > 5 ||
+                              (node.age < 5 && node.missedFrames > 0);
+                     }),
       this->trackedGraph.nodes.end());
 
+  // Remove all tracked edges
   this->trackedGraph.edges.clear();
 
   // Add edges to tracked graph
+  // Iterate over every node
   for (int i = 0; i < this->graph.nodes.size(); i++) {
     Node &node = this->graph.nodes[i];
+
+    // Iterate over every edge
     for (const Edge &edge : this->graph.edges) {
+      // If edge is not connected to the current node, continue
       if (edge.src != node.id && edge.dst != node.id) {
         continue;
       }
 
+      // Get the ID of the other connected node
       int connectedID = edge.src == node.id ? edge.dst : edge.src;
 
+      // Make sure the other node exists and make an iterator to it
       auto connectedIt =
           std::find_if(this->graph.nodes.begin(), this->graph.nodes.end(),
                        [&connectedID](const Node &connected) {
@@ -756,21 +795,25 @@ void GraphExtractor::updateGraph() {
         return;
       }
 
+      // Get the index of the connected node within the observed graph
       int connectedIndex =
           std::distance(this->graph.nodes.begin(), connectedIt);
 
+      // Get the new tracked node IDs within the tracked graph
       int trackedSrcIndex = edge.src == node.id ? i : connectedIndex;
       int trackedDstIndex = edge.dst == node.id ? i : connectedIndex;
 
       int trackedSrc = newIDs[trackedSrcIndex];
       int trackedDst = newIDs[trackedDstIndex];
 
+      // Create a new tracked edge
       TrackedEdge tracked;
       this->edgeToTracked(edge, tracked);
 
       tracked.src = trackedSrc;
       tracked.dst = trackedDst;
 
+      // Make sure the edge doesn't already exist to prevent duplicates
       bool exists = false;
       for (const TrackedEdge &existingTracked : this->trackedGraph.edges) {
         if ((tracked.src == existingTracked.src &&
@@ -786,6 +829,7 @@ void GraphExtractor::updateGraph() {
         continue;
       }
 
+      // Add the new tracked edge to the tracked graph
       this->trackedGraph.edges.push_back(tracked);
     }
   }
@@ -813,8 +857,6 @@ void GraphExtractor::updateGraph() {
     this->trackedGraph.edges.erase(this->trackedGraph.edges.begin() + i);
     i--;
   }
-
-  // std::cout << this->trackedGraph.edges.size() << std::endl;
 }
 
 std::vector<double>
