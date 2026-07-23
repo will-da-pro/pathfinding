@@ -73,10 +73,10 @@ int main() {
     std::vector<Node> path;
 
     auto end = std::chrono::steady_clock::now();
-    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end -
-                                                                       start)
-                     .count()
-              << std::endl;
+    // std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end -
+    //                                                                    start)
+    //                  .count()
+    //           << std::endl;
 
     if (nodes.size() > 0) {
       path = graphExtractor.findPath(nodes[0]);
@@ -117,6 +117,25 @@ int main() {
       for (const auto pos : edge.path) {
         trackedNodesImg.at<cv::Vec3b>(pos.y, pos.x) = cv::Vec3b(255, 0, 0);
       }
+      cv::Point src = graphExtractor.trackedGraph.nodeFromID(edge.src)->pos;
+      cv::Point dst = graphExtractor.trackedGraph.nodeFromID(edge.dst)->pos;
+
+      cv::Point srcAngle =
+          src +
+          static_cast<cv::Point>(20 * cv::Point2f(std::cos(edge.angleFromSrc),
+                                                  std::sin(edge.angleFromSrc)));
+      cv::Point dstAngle =
+          dst +
+          static_cast<cv::Point>(20 * cv::Point2f(std::cos(edge.angleFromDst),
+                                                  std::sin(edge.angleFromDst)));
+
+      // std::cout << edge.angleFromSrc << ", " << edge.angleFromDst << ", " <<
+      // src
+      //           << ", " << dst << ", " << srcAngle << ", " << dstAngle
+      //           << std::endl;
+
+      cv::line(trackedNodesImg, src, srcAngle, cv::Scalar(0, 0, 255));
+      cv::line(trackedNodesImg, dst, dstAngle, cv::Scalar(255, 0, 255));
     }
 
     for (int i = 1; i < path.size(); i++) {
@@ -140,9 +159,12 @@ int main() {
     cv::imshow("tracked", trackedNodesImg);
     cv::imshow("green", green);
 
-    char key = (char)cv::waitKey(delay);
-    if (key == 27 || key == 'q' || key == 'Q')
-      break;
+    graphExtractor.threshWriter.write(skeletonizedImageGraph);
+    graphExtractor.pathWriter.write(trackedNodesImg);
+
+    // char key = (char)cv::waitKey(delay);
+    // if (key == 27 || key == 'q' || key == 'Q')
+    //   break;
   }
   // cv::waitKey(0);
 

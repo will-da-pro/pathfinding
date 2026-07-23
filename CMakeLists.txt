@@ -16,6 +16,7 @@ set(OPENCV_LIBS
     "/opt/homebrew/lib/libopencv_videoio.dylib"
     "/opt/homebrew/lib/libopencv_video.dylib"
     "/opt/homebrew/lib/libopencv_ximgproc.dylib"
+    "/opt/homebrew/lib/libopencv_geometry.dylib"
 )
 
 add_library(hungarian-algorithm-cpp STATIC
@@ -31,7 +32,7 @@ set(SOURCE_FILES
 add_executable(main ${SOURCE_FILES})
 
 # 3. Include the headers (usually in this location for Brew)
-target_include_directories(main PRIVATE "/opt/homebrew/include/opencv4")
+target_include_directories(main PRIVATE "/opt/homebrew/include/opencv5")
 target_include_directories(main PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(main PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/extern/hungarian-algorithm-cpp)
 target_include_directories(main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
