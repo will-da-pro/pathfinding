@@ -29,7 +29,19 @@ set(SOURCE_FILES
     src/ExtractGraph.cpp
 )
 
+set(TEST_FILES
+    src/ExtractGraph.cpp
+    src/test_video.cpp
+)
+
 add_executable(main ${SOURCE_FILES})
+
+enable_testing()
+add_executable(path_tests ${TEST_FILES})
+add_test(NAME TestRec COMMAND path_tests "${CMAKE_CURRENT_SOURCE_DIR}/test/rec.mp4")
+add_test(NAME TestOutput COMMAND path_tests "${CMAKE_CURRENT_SOURCE_DIR}/test/output.mp4")
+add_test(NAME TestOutput1 COMMAND path_tests "${CMAKE_CURRENT_SOURCE_DIR}/test/output-1.mp4")
+add_test(NAME TestOutput3 COMMAND path_tests "${CMAKE_CURRENT_SOURCE_DIR}/test/output-3.mp4")
 
 # 3. Include the headers (usually in this location for Brew)
 target_include_directories(main PRIVATE "/opt/homebrew/include/opencv5")
@@ -39,3 +51,12 @@ target_include_directories(main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # 4. Link against the absolute paths defined above
 target_link_libraries(main PRIVATE ${OPENCV_LIBS} ${OpenCV_LIBRARIES} hungarian-algorithm-cpp)
+
+# 3. Include the headers (usually in this location for Brew)
+target_include_directories(path_tests PRIVATE "/opt/homebrew/include/opencv5")
+target_include_directories(path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(path_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/extern/hungarian-algorithm-cpp)
+target_include_directories(path_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# 4. Link against the absolute paths defined above
+target_link_libraries(path_tests PRIVATE ${OPENCV_LIBS} ${OpenCV_LIBRARIES} hungarian-algorithm-cpp)

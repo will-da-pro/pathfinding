@@ -539,7 +539,8 @@ double GraphExtractor::calculateAngle(cv::Point point1, cv::Point point2) {
   /**
    * @brief Calculate the angle of point2 from point1.
    *
-   * Calculates the angle of point2 relative to point1.
+   * Calculates the angle of point2 relative to point1. Returns 0 if point1 ==
+   * point2.
    *
    * @param point1 First point.
    * @param point2 Second point.
@@ -547,11 +548,6 @@ double GraphExtractor::calculateAngle(cv::Point point1, cv::Point point2) {
    */
   int rise = point2.y - point1.y;
   int run = point2.x - point1.x;
-
-  // Don't divide by 0!
-  if (run == 0) {
-    return rise > 0 ? std::numbers::pi : -std::numbers::pi;
-  }
 
   double angle = std::atan2(rise, run);
   return angle;

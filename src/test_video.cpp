@@ -1,45 +1,24 @@
 #include "pathfinding/ExtractGraph.hpp"
-#include <chrono>
-#include <iostream>
-#include <opencv2/opencv.hpp>
-#include <opencv2/ximgproc.hpp>
-#include <vector>
-// #include <vector>
+#include <stdexcept>
 
-int main() {
-  // cv::VideoCapture cap(1);
-  // if (!cap.isOpened()) {
-  //   std::cerr
-  //       << "Warning: Cannot open VideoCapture(1). Falling back to index 0..."
-  //       << std::endl;
-  //   cap.open(0);
-  //   if (!cap.isOpened()) {
-  //     std::cerr << "Error: Cannot open any camera!" << std::endl;
-  //     return -1;
-  //   }
-  // }
-  //
-  // std::cout << "Camera opened (index 1 or 0). Press ESC or 'q' to quit."
-  //           << std::endl;
-
-  cv::VideoCapture cap("/Users/williamdolier/Documents/school/se/cpp/"
-                       "pathfinding/test/rec.mp4");
-  if (!cap.isOpened()) {
-    std::cerr << "Error: Could not open the video file." << std::endl;
-    return -1;
+int main(int argc, char **argv) {
+  if (argc != 2) {
+    throw std::invalid_argument("Invalid number of arguments!");
   }
+
+  std::string video = argv[1];
+  cv::VideoCapture cap(video);
+
+  if (!cap.isOpened()) {
+    throw std::runtime_error("Error: Could not open the video file.");
+  }
+
+  std::cout << "Video successfully loaded\n";
 
   double fps = cap.get(cv::CAP_PROP_FPS);
   std::cout << "Playing video at " << fps << " FPS." << std::endl;
 
-  int delay = (fps > 0) ? static_cast<int>(1000 / fps) : 33;
-
-  namedWindow("Skeleton + Graph", cv::WINDOW_NORMAL);
-  namedWindow("tracked", cv::WINDOW_NORMAL);
-  namedWindow("green", cv::WINDOW_NORMAL);
-
   GraphExtractor graphExtractor;
-
   while (true) {
     cv::Mat frame;
     cap >> frame;
@@ -166,7 +145,6 @@ int main() {
     // if (key == 27 || key == 'q' || key == 'Q')
     //   break;
   }
-  // cv::waitKey(0);
 
   cap.release();
   cv::destroyAllWindows();
