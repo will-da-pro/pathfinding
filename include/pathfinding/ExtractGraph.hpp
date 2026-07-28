@@ -1,3 +1,4 @@
+#include <memory>
 #include <opencv2/core/types.hpp>
 #include <opencv2/opencv.hpp>
 #include <vector>
@@ -124,8 +125,10 @@ private:
   double wrapAngle(double angle);
   double addAngles(double angle1, double angle2);
 
-  void findStartingEdge(int &trackingID, TrackedEdge **currentEdge);
-  void findNextTarget(int &trackingID, TrackedEdge **currentEdge);
+  void findStartingEdge(int &trackingID,
+                        std::shared_ptr<TrackedEdge> *currentEdge);
+  void findNextTarget(int &trackingID,
+                      std::shared_ptr<TrackedEdge> *currentEdge);
   TrackedEdge *closestToAngle(int currentNode,
                               std::vector<TrackedEdge *> currentEdges,
                               double targetAngle);
@@ -139,7 +142,7 @@ private:
   std::vector<cv::Point> green;
 
   int currentTarget = -1;
-  TrackedEdge *currentEdge = nullptr;
+  std::shared_ptr<TrackedEdge> currentEdge = nullptr;
 
   bool searchLineBreak = false;
   int searchLastNode;

@@ -35,7 +35,6 @@ int main(int argc, char **argv) {
     graphExtractor.processImage();
 
     cv::Mat skeletonizedImage = graphExtractor.getSkeletonizedImage();
-    auto start = std::chrono::steady_clock::now();
     // Graph graph = buildGraph(skeletonizedImage, 10);
 
     // cv::Mat skeletonizedImageGraph = visualise(skeletonizedImage, graph);
@@ -50,12 +49,6 @@ int main(int argc, char **argv) {
     TrackedNode *target = graphExtractor.getTarget();
 
     std::vector<Node> path;
-
-    auto end = std::chrono::steady_clock::now();
-    // std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end -
-    //                                                                    start)
-    //                  .count()
-    //           << std::endl;
 
     if (nodes.size() > 0) {
       path = graphExtractor.findPath(nodes[0]);
@@ -108,11 +101,6 @@ int main(int argc, char **argv) {
           static_cast<cv::Point>(20 * cv::Point2f(std::cos(edge.angleFromDst),
                                                   std::sin(edge.angleFromDst)));
 
-      // std::cout << edge.angleFromSrc << ", " << edge.angleFromDst << ", " <<
-      // src
-      //           << ", " << dst << ", " << srcAngle << ", " << dstAngle
-      //           << std::endl;
-
       cv::line(trackedNodesImg, src, srcAngle, cv::Scalar(0, 0, 255));
       cv::line(trackedNodesImg, dst, dstAngle, cv::Scalar(255, 0, 255));
     }
@@ -134,16 +122,8 @@ int main(int argc, char **argv) {
                  -1);
     }
 
-    cv::imshow("Skeleton + Graph", skeletonizedImageGraph);
-    cv::imshow("tracked", trackedNodesImg);
-    cv::imshow("green", green);
-
     graphExtractor.threshWriter.write(skeletonizedImageGraph);
     graphExtractor.pathWriter.write(trackedNodesImg);
-
-    // char key = (char)cv::waitKey(delay);
-    // if (key == 27 || key == 'q' || key == 'Q')
-    //   break;
   }
 
   cap.release();
