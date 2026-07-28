@@ -717,10 +717,6 @@ void GraphExtractor::updateGraph() {
       }
 
       // Find the new IDs of the nodes in the tracked graph
-      std::cout << std::distance(this->graph.nodes.begin(), src_it) << ", "
-                << std::distance(this->graph.nodes.begin(), dst_it)
-                << std::endl;
-      std::cout << this->graph.nodes.size() << std::endl;
       int srcIndex = newIDs[std::distance(this->graph.nodes.begin(), src_it)];
       int dstIndex = newIDs[std::distance(this->graph.nodes.begin(), dst_it)];
 
@@ -782,9 +778,6 @@ void GraphExtractor::updateGraph() {
       continue;
 
     // Get the new observed node
-    std::cout << this->graph.nodes.size() << ", " << assignment.size() << ", "
-              << assignment[i] << ", " << matched.size() << ", " << matched[i]
-              << std::endl;
     Node detectedNode = this->graph.nodes[i];
 
     // Create a new tracked node
@@ -1134,26 +1127,17 @@ void GraphExtractor::findNextTarget(int &trackingID,
       return;
     }
 
-    std::cout << "ab\n";
-
-    std::cout << closestNode.id << ", " << surroundingEdges.size() << std::endl;
-    std::cout << this->searchDirection << std::endl;
-
     // Update edge and target
     std::shared_ptr<TrackedEdge> newEdge =
         std::make_shared<TrackedEdge>(*this->closestToAngle(
             closestNode.id, surroundingEdges, this->searchDirection));
-    std::cout << "b\n";
     int newTarget =
         closestNode.id == newEdge->src ? newEdge->dst : newEdge->src;
 
     this->currentTarget = newTarget;
     this->currentEdge = newEdge;
     this->searchLineBreak = false;
-    std::cout << "c\n";
   }
-
-  std::cout << "No break\n";
 
   // Reset tracked node and edge
   if (!currentEdge || trackingID < 0) {
@@ -1161,22 +1145,16 @@ void GraphExtractor::findNextTarget(int &trackingID,
     this->findStartingEdge(trackingID, currentEdge);
     return;
   }
-  std::cout << "0\n";
 
   TrackedNode *currentNodePointer = this->trackedGraph.nodeFromID(trackingID);
-  std::cout << "0.1\n";
 
   // Make sure the current node exists
   if (!currentNodePointer) {
 
-    std::cout << "0.11\n";
     this->currentTarget = -1;
-    std::cout << "0.12\n";
     this->findStartingEdge(trackingID, currentEdge);
     return;
   }
-
-  std::cout << "1\n";
 
   TrackedNode currentNode = *currentNodePointer;
 
@@ -1195,7 +1173,6 @@ void GraphExtractor::findNextTarget(int &trackingID,
 
     return;
   }
-  std::cout << "2\n";
 
   // Get all edges surrounding the tracked node
   std::vector<TrackedEdge *> surroundingEdges;
@@ -1209,7 +1186,6 @@ void GraphExtractor::findNextTarget(int &trackingID,
     std::cerr << "No surrounding edges to node.\n";
     return;
   }
-  std::cout << "3\n";
   std::weak_ptr<TrackedEdge> weakRef = *currentEdge;
   if (auto lockedPtr = weakRef.lock())
     ;
@@ -1235,7 +1211,6 @@ void GraphExtractor::findNextTarget(int &trackingID,
 
     return;
   }
-  std::cout << "4\n";
 
   // Find adjacent green squares
   std::vector<double> surroundingGreen;
@@ -1250,7 +1225,6 @@ void GraphExtractor::findNextTarget(int &trackingID,
     surroundingGreen.push_back(angle);
   }
 
-  std::cout << "5\n";
   // Target angles for going straight, and turning left and right.
   double targetLeft = this->addAngles(currentAngle, -std::numbers::pi / 2);
   double targetRight = this->addAngles(currentAngle, std::numbers::pi / 2);
@@ -1267,7 +1241,6 @@ void GraphExtractor::findNextTarget(int &trackingID,
   // Check if there is green to left or right of line.
   bool greenLeft = false;
   bool greenRight = false;
-  std::cout << "5\n";
 
   for (double &greenAngle : surroundingGreen) {
     double diff = this->addAngles(currentAngle, -greenAngle);

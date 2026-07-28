@@ -162,9 +162,9 @@ int main() {
     graphExtractor.threshWriter.write(skeletonizedImageGraph);
     graphExtractor.pathWriter.write(trackedNodesImg);
 
-    // char key = (char)cv::waitKey(delay);
-    // if (key == 27 || key == 'q' || key == 'Q')
-    //   break;
+    char key = (char)cv::waitKey(delay);
+    if (key == 27 || key == 'q' || key == 'Q')
+      break;
   }
   // cv::waitKey(0);
 
