@@ -1,0 +1,43 @@
+name: Mirror to Target Repo
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+
+jobs:
+  mirror:
+    if: github.repository == 'will-da-pro/pathfinding'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Test SSH Connection
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+          ssh -T -i ~/.ssh/id_rsa git@github.com || true
+
+      - name: Push to Mirror Repo
+        run: |
+          # Add the target remote
+          git remote add mirror git@github.com:SGCS-SE/2026-at3-software-project-will-da-pro.git
+          
+          # Force Git to use the specific SSH key we just set up
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa"
+          
+          # Push ONLY the main branch to line_follow_ros on the target repo
+          # --force ensures the target branch perfectly matches your source main branch
+          git push --force mirror master:main
