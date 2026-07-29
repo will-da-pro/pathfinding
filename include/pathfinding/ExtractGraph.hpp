@@ -117,6 +117,7 @@ private:
   double calculateDist(cv::Point point1, cv::Point point2);
 
   void updateGraph();
+  void updateGreen();
 
   std::vector<double> getEdgeDirections(Node origin, std::vector<Edge *> edges);
 

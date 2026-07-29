@@ -13,6 +13,7 @@
 #include <vector>
 
 TrackedNode::TrackedNode(cv::Point pos) {
+  // Initialize Kalman filter
   float dt = 1.0f;
   kf.transitionMatrix = cv::Mat_<float>(
       {4, 4}, {1, 0, dt, 0, 0, 1, 0, dt, 0, 0, 1, 0, 0, 0, 0, 1});
@@ -30,29 +31,40 @@ TrackedNode::TrackedNode(cv::Point pos) {
   kf.statePost.at<float>(2) = 0.0f;  // Initial velocity X
   kf.statePost.at<float>(3) = 0.0f;  // Initial velocity Y
 
+  // Initialize position
   this->pos = pos;
 }
 
 std::vector<std::vector<double>> TrackedGraph::getCostMatrix(Graph &graph) {
+  /**
+   * @brief Get the cost matrix of a graph against the tracked graph.
+   */
   // The vector must be square
+  // Choose size based on longest edge
   int size = this->nodes.size() > graph.nodes.size() ? this->nodes.size()
                                                      : graph.nodes.size();
 
+  // Initialize square vector with correct size
   std::vector<std::vector<double>> costs(size, std::vector(size, 0.0));
 
+  // Populate the cost matrix, where costs[i][j] is the cost between
+  // graph.nodes[i] and trackedGraph.nodes[j]
   for (int i = 0; i < this->nodes.size(); i++) {
     for (int j = 0; j < graph.nodes.size(); j++) {
       Node &newNode = graph.nodes[j];
       Node &trackedNode = this->nodes[i];
 
+      // Set the cost as the euclidean distance between points
       double distance = cv::norm(trackedNode.pos - newNode.pos);
+
+      // Apply a penalty for the number of connected edges to improve accuracy
       int connectedEdgeDiff = graph.getConnectedEdges(newNode.id).size() -
                               this->getConnectedEdges(trackedNode.id).size();
-
       double penalty = trackedNode.screen_edge
                            ? 0
                            : this->edgePenalty * std::abs(connectedEdgeDiff);
 
+      // Calculate final cost with penalty
       double cost = distance + penalty;
       costs[i][j] = cost;
     }
@@ -76,18 +88,28 @@ GraphExtractor::GraphExtractor() {
 }
 
 void GraphExtractor::loadImage(cv::Mat &image) {
+  /**
+   * @brief Load the frame into GraphExtractor and apply skeletonization.
+   *
+   * Reduces size to 100x200px for performance, applies an adaptive threshold,
+   * opens and closes the image to remove noise, and applies skeletonization.
+   *
+   * @param image Input frame.
+   */
   cv::Mat resized;
   cv::Size dsize(200, 100);
 
   cv::resize(image, resized, dsize, 0, 0, cv::INTER_LINEAR);
 
+  // Convert to gray and blur
   cv::Mat gray, binary;
   cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
   GaussianBlur(gray, gray, cv::Size(5, 5), 0);
 
-  cv::Mat flat;
-  flat = this->flattenIllumination(gray);
+  // cv::Mat flat;
+  // flat = this->flattenIllumination(gray);
 
+  // Apply adaptive threshold
   cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
                         cv::THRESH_BINARY_INV, 55, 10);
 
@@ -99,12 +121,14 @@ void GraphExtractor::loadImage(cv::Mat &image) {
   // cv::imshow("binary", binary);
   cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
 
+  // Remove noise from image
   cv::Mat opened_image;
   cv::morphologyEx(binary, opened_image, cv::MORPH_OPEN, kernel);
 
   cv::Mat closed_image;
   cv::morphologyEx(opened_image, closed_image, cv::MORPH_CLOSE, kernel);
 
+  // Apply skeletonization
   cv::Mat skeleton;
   cv::ximgproc::thinning(closed_image, skeleton,
                          cv::ximgproc::THINNING_GUOHALL);
@@ -112,6 +136,7 @@ void GraphExtractor::loadImage(cv::Mat &image) {
   int rows = skeleton.rows;
   int cols = skeleton.cols;
 
+  // Set borders to 0
   cv::Rect top_border_roi(0, 0, cols, 1);
   skeleton(top_border_roi).setTo(0);
 
@@ -190,18 +215,32 @@ cv::Mat GraphExtractor::applySmoothVariableThreshold(const cv::Mat &grayImage) {
 }
 
 std::vector<cv::Point> GraphExtractor::extractGreen(cv::Mat &image) {
+  /**
+   * @brief Extract all green areas from the image.
+   *
+   * Applies a HSV threshold and contours to detect all green contours of a
+   * great enough area.
+   *
+   * @param image Input frame.
+   * @return Vector of all green centeroids.
+   */
+  // Convert to HSV
   cv::Mat hsv;
   cv::cvtColor(image, hsv, cv::COLOR_BGR2HSV);
 
+  // Green range
   cv::Scalar lower_green(35, 40, 40);
   cv::Scalar upper_green(85, 255, 255);
 
+  // Apply green mask
   cv::Mat mask;
   cv::inRange(hsv, lower_green, upper_green, mask);
 
+  // Reduce noise
   cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
   cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
 
+  // Find green contours
   std::vector<std::vector<cv::Point>> contours;
   std::vector<cv::Vec4i> hierarchy;
   cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL,
@@ -209,6 +248,7 @@ std::vector<cv::Point> GraphExtractor::extractGreen(cv::Mat &image) {
 
   std::vector<cv::Point> centers;
 
+  // Get centers of all green contours and check if large enough
   for (const auto &contour : contours) {
     double area = cv::contourArea(contour);
 
@@ -231,6 +271,9 @@ std::vector<cv::Point> GraphExtractor::extractGreen(cv::Mat &image) {
 
 cv::Point GraphExtractor::cvtPoint(cv::Mat &src, cv::Mat &dst,
                                    cv::Point point) {
+  /**
+   * @brief Convert a point from the same relative position in src to dst.
+   */
   double sx = static_cast<double>(dst.cols) / static_cast<double>(src.cols);
   double sy = static_cast<double>(dst.rows) / static_cast<double>(src.rows);
 
@@ -239,6 +282,9 @@ cv::Point GraphExtractor::cvtPoint(cv::Mat &src, cv::Mat &dst,
 }
 
 Node *Graph::nodeFromID(int id) {
+  /**
+   * @brief Get a node object from its ID.
+   */
   for (Node &node : this->nodes) {
     if (node.id == id)
       return &node;
@@ -248,6 +294,9 @@ Node *Graph::nodeFromID(int id) {
 }
 
 TrackedNode *TrackedGraph::nodeFromID(int id) {
+  /**
+   * @brief Get a tracked node object from its ID.
+   */
   for (TrackedNode &node : this->nodes) {
     if (node.id == id)
       return &node;
@@ -272,6 +321,7 @@ void GraphExtractor::processImage() {
   this->removeShortEdges(this->graph.edges);
   this->removeUnconnectedNodes();
   this->updateGraph();
+  this->updateGreen();
   this->findNextTarget(this->currentTarget, &this->currentEdge);
 }
 
@@ -895,6 +945,16 @@ void GraphExtractor::updateGraph() {
     this->trackedGraph.edges.erase(this->trackedGraph.edges.begin() + i);
     i--;
   }
+}
+
+void GraphExtractor::updateGreen() {
+  std::vector<cv::Point> greenCenters = this->extractGreen(this->rawImage);
+
+  for (cv::Point &green : greenCenters) {
+    green = this->cvtPoint(this->rawImage, this->skeletonizedImage, green);
+  }
+
+  this->green = greenCenters;
 }
 
 std::vector<double>
