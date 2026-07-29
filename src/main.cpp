@@ -38,7 +38,7 @@ int main() {
   namedWindow("tracked", cv::WINDOW_NORMAL);
   namedWindow("green", cv::WINDOW_NORMAL);
 
-  GraphExtractor graphExtractor;
+  GraphExtractor graphExtractor("path.mp4");
 
   while (true) {
     cv::Mat frame;
@@ -159,7 +159,6 @@ int main() {
     cv::imshow("tracked", trackedNodesImg);
     cv::imshow("green", green);
 
-    graphExtractor.threshWriter.write(skeletonizedImageGraph);
     graphExtractor.pathWriter.write(trackedNodesImg);
 
     char key = (char)cv::waitKey(delay);

@@ -72,7 +72,7 @@ struct ComparePoints {
 
 class GraphExtractor {
 public:
-  GraphExtractor();
+  GraphExtractor(std::string videoOut);
 
   void loadImage(cv::Mat &image);
   void processImage();
@@ -94,7 +94,6 @@ public:
   int gatingThreshold;
   TrackedGraph trackedGraph;
 
-  cv::VideoWriter threshWriter;
   cv::VideoWriter pathWriter;
 
 private:

@@ -73,18 +73,15 @@ std::vector<std::vector<double>> TrackedGraph::getCostMatrix(Graph &graph) {
   return costs;
 }
 
-GraphExtractor::GraphExtractor() {
+GraphExtractor::GraphExtractor(std::string videoOut) {
   std::cout << "Initialising graph extractor..." << std::endl;
   this->pathLimit = 5;
   this->minEdgeSize = 25;
   this->gatingThreshold = 50;
 
   int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
-  this->threshWriter =
-      cv::VideoWriter("thresh.mp4", fourcc, 30, cv::Size(200, 100));
 
-  this->pathWriter =
-      cv::VideoWriter("path.mp4", fourcc, 30, cv::Size(200, 100));
+  this->pathWriter = cv::VideoWriter(videoOut, fourcc, 30, cv::Size(200, 100));
 }
 
 void GraphExtractor::loadImage(cv::Mat &image) {

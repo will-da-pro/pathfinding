@@ -2,12 +2,13 @@
 #include <stdexcept>
 
 int main(int argc, char **argv) {
-  if (argc != 2) {
+  if (argc != 3) {
     throw std::invalid_argument("Invalid number of arguments!");
   }
 
   std::string video = argv[1];
   cv::VideoCapture cap(video);
+  std::string videoOut = argv[2];
 
   if (!cap.isOpened()) {
     throw std::runtime_error("Error: Could not open the video file.");
@@ -18,7 +19,7 @@ int main(int argc, char **argv) {
   double fps = cap.get(cv::CAP_PROP_FPS);
   std::cout << "Playing video at " << fps << " FPS." << std::endl;
 
-  GraphExtractor graphExtractor;
+  GraphExtractor graphExtractor(videoOut);
   while (true) {
     cv::Mat frame;
     cap >> frame;
@@ -122,7 +123,6 @@ int main(int argc, char **argv) {
                  -1);
     }
 
-    graphExtractor.threshWriter.write(skeletonizedImageGraph);
     graphExtractor.pathWriter.write(trackedNodesImg);
   }
 
